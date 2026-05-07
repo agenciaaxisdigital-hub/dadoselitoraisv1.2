@@ -6,6 +6,7 @@ import {
   getTableName,
   getAnosDisponiveis,
   sqlPainelCandidatos,
+  isEleicaoGeral,
   sqlPerfilCandidato,
   sqlBensCandidato,
   sqlPatrimonioCandidato,
@@ -66,7 +67,32 @@ export function usePainelGeral(limite = 100) {
   const f = useFilters();
   return useQuery({
     queryKey: ['painelGeral', f.ano, f.municipio, f.cargo, f.partido, f.turno, f.zona, f.bairro, f.escola, limite],
-    queryFn: () => mdQuery(sqlPainelCandidatos({ ...toFiltrosPainel(f), limite })),
+    queryFn: async () => {
+      const fp = toFiltrosPainel(f);
+      const hasGeo = !!(f.zona || f.bairro || f.escola);
+      const geral = isEleicaoGeral(f.ano);
+      if (!hasGeo && !(geral && f.municipio)) {
+        const preTable = `my_db.ranking_pre_${f.ano}_GO`;
+        const conds: string[] = [];
+        if (f.municipio) conds.push(`NM_UE = '${sqlSafe(f.municipio)}'`);
+        if (f.cargo) conds.push(`DS_CARGO ILIKE '%${sqlSafe(f.cargo)}%'`);
+        if (f.partido) conds.push(`SG_PARTIDO = '${sqlSafe(f.partido)}'`);
+        if (f.turno) conds.push(`NR_TURNO = ${f.turno}`);
+        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+        try {
+          return await mdQuery(`
+            SELECT NM_URNA_CANDIDATO AS candidato, NM_CANDIDATO AS nome_completo,
+              SG_PARTIDO AS partido, DS_CARGO AS cargo, NM_UE AS municipio,
+              DS_SIT_TOT_TURNO AS situacao, DS_GENERO AS genero,
+              DS_GRAU_INSTRUCAO AS escolaridade, DS_OCUPACAO AS ocupacao,
+              SQ_CANDIDATO AS sq_candidato, NR_CANDIDATO AS numero, total_votos
+            FROM ${preTable} ${where}
+            ORDER BY total_votos DESC LIMIT ${limite}
+          `);
+        } catch { /* pre-computed table missing, fall through */ }
+      }
+      return mdQuery(sqlPainelCandidatos({ ...fp, limite }));
+    },
     staleTime: 15 * 60 * 1000,
   });
 }
@@ -84,35 +110,35 @@ export function useDossieCandidato(sq: string | null, ano?: number) {
     queryKey: ['dossiePerfil', sq, anoFinal],
     queryFn: () => mdQuery(sqlPerfilCandidato(anoFinal, { sq: sq! })),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 
   const bens = useQuery({
     queryKey: ['dossieBens', sq, anoFinal],
     queryFn: () => mdQuery(sqlBensCandidato(anoFinal, sq!)),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 
   const patrimonio = useQuery({
     queryKey: ['dossiePatrimonio', sq, anoFinal],
     queryFn: () => mdQuery(sqlPatrimonioCandidato(anoFinal, sq!)),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 
   const votacaoZona = useQuery({
     queryKey: ['dossieVotacaoZona', sq, anoFinal, geoFiltros.zona, geoFiltros.bairro, geoFiltros.escola],
     queryFn: () => mdQuery(sqlVotacaoPorZona(anoFinal, sq!, geoFiltros)),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 
   const votacaoTerritorial = useQuery({
     queryKey: ['dossieVotacaoTerritorial', sq, anoFinal, geoFiltros.zona, geoFiltros.bairro, geoFiltros.escola, geoFiltros.municipio],
     queryFn: () => mdQuery(sqlVotacaoTerritorialDetalhada(anoFinal, sq!, geoFiltros)),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 
   return {
@@ -135,7 +161,7 @@ export function useHistoricoCandidato(cpf: string | null) {
     queryKey: ['historicoCandidato', cpf],
     queryFn: () => mdQuery(sqlHistoricoCandidato(cpf!)),
     enabled: !!cpf,
-    staleTime: 10 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
   });
 }
 
@@ -146,10 +172,10 @@ export function useHistoricoCandidato(cpf: string | null) {
 export function useZonasEleitorais(sqCandidato?: string) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['zonasEleitorais', sqCandidato, f],
+    queryKey: ['zonasEleitorais', sqCandidato, f.ano, f.municipio, f.zona],
     queryFn: () => mdQuery(sqlVotacaoPorZona(f.ano, sqCandidato!, toFiltrosPainel(f))),
     enabled: !!sqCandidato,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -164,7 +190,7 @@ export function useLocaisVotacao(municipio?: string) {
     queryKey: ['locaisVotacao', mun, ano],
     queryFn: () => mdQuery(sqlLocaisVotacao(ano, mun)),
     enabled: !!mun,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -175,7 +201,7 @@ export function useSecoesLocal(localVotacao: string | null, municipio?: string) 
     queryKey: ['secoesLocal', localVotacao, mun, ano],
     queryFn: () => mdQuery(sqlSecoesLocal(ano, mun, localVotacao!)),
     enabled: !!mun && !!localVotacao,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -186,7 +212,7 @@ export function useEscolasEleitorais(municipio?: string) {
     queryKey: ['escolasEleitorais', mun, ano],
     queryFn: () => mdQuery(sqlEleitoresPorBairro(ano, mun)),
     enabled: !!mun,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -197,7 +223,7 @@ export function useEscolasEleitorais(municipio?: string) {
 export function useKPIs() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['kpis', f],
+    queryKey: ['kpis', f.ano, f.municipio, f.cargo, f.partido, f.turno],
     queryFn: async () => {
       const rows = await mdQuery(sqlResumoEleicao(toFiltrosPainel(f)));
       const r = rows[0] as any || {};
@@ -212,7 +238,7 @@ export function useKPIs() {
         totalMunicipios: Number(r.municipios || 0),
       };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -223,9 +249,9 @@ export function useKPIs() {
 export function useTopPatrimonio(limite = 20) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['topPatrimonio', f, limite],
+    queryKey: ['topPatrimonio', f.ano, f.municipio, f.cargo, limite],
     queryFn: () => mdQuery(sqlRankingPatrimonio({ ...toFiltrosPainel(f), limite })),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -236,9 +262,9 @@ export function useTopPatrimonio(limite = 20) {
 export function useComparecimento() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['comparecimento', f],
+    queryKey: ['comparecimento', f.ano, f.municipio, f.turno, f.zona, f.bairro, f.escola],
     queryFn: () => mdQuery(sqlComparecimento(toFiltrosPainel(f))),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -249,7 +275,7 @@ export function useEvolucaoComparecimento(municipio?: string) {
     queryKey: ['evolucaoComparecimento', mun],
     queryFn: () => mdQuery(sqlEvolucaoComparecimento(mun)),
     enabled: !!mun,
-    staleTime: 10 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
   });
 }
 
@@ -260,9 +286,9 @@ export function useEvolucaoComparecimento(municipio?: string) {
 export function useVotosRegional() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['votosRegional', f],
+    queryKey: ['votosRegional', f.ano, f.municipio, f.turno, f.zona, f.bairro, f.escola],
     queryFn: () => mdQuery(sqlVotosRegional(toFiltrosPainel(f))),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -272,9 +298,9 @@ export function useVotosRegional() {
 export function useRankingPartidos(limite = 20) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['rankingPartidos', f, limite],
+    queryKey: ['rankingPartidos', f.ano, f.municipio, f.cargo, f.turno, f.zona, f.bairro, f.escola, limite],
     queryFn: () => mdQuery(sqlRankingPartidos({ ...toFiltrosPainel(f), limite })),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -285,18 +311,18 @@ export function useRankingPartidos(limite = 20) {
 export function useDistribuicaoGenero() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['genero', f],
+    queryKey: ['genero', f.ano, f.municipio, f.cargo, f.partido, f.turno],
     queryFn: () => mdQuery(sqlDistribuicaoGenero(toFiltrosPainel(f))),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
 export function useDistribuicaoEscolaridade() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['escolaridade', f],
+    queryKey: ['escolaridade', f.ano, f.municipio, f.cargo, f.partido, f.turno],
     queryFn: () => mdQuery(sqlDistribuicaoEscolaridade(toFiltrosPainel(f))),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -313,7 +339,7 @@ export function useMunicipios() {
       );
       return rows.map(r => r.m);
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -326,7 +352,7 @@ export function usePartidos() {
       );
       return rows.map(r => r.p);
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -340,7 +366,7 @@ export function useCargos() {
       );
       return rows.map(r => r.c);
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -368,7 +394,7 @@ export function useZonas() {
       return rows.map(r => r.z);
     },
     enabled: !!municipio && !!anoLocal,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
   });
 }
 
@@ -387,7 +413,7 @@ export function useBairros() {
       return rows.map(r => r.b);
     },
     enabled: !!municipio && !!anoLocal,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
   });
 }
 
@@ -405,7 +431,7 @@ export function useEscolas() {
       return rows.map(r => r.e);
     },
     enabled: !!municipio && !!bairro && !!anoLocal,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
   });
 }
 
@@ -416,7 +442,7 @@ export function useEscolas() {
 export function useExplorador(page: number, pageSize: number, sortBy: string, sortAsc: boolean) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['explorador', f, page, pageSize, sortBy, sortAsc],
+    queryKey: ['explorador', f.ano, f.municipio, f.cargo, f.partido, f.turno, f.searchText, page, pageSize, sortBy, sortAsc],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -448,7 +474,7 @@ export function useExplorador(page: number, pageSize: number, sortBy: string, so
       ]);
       return { data: dataRes, count: Number(countRes[0]?.total || 0), pageSize };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -459,7 +485,7 @@ export function useExplorador(page: number, pageSize: number, sortBy: string, so
 export function useRanking(search: string, page: number, sortBy: string, sortAsc: boolean, pageSize = 30) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['ranking', f, search, page, sortBy, sortAsc],
+    queryKey: ['ranking', f.ano, f.municipio, f.cargo, f.partido, f.turno, search, page, sortBy, sortAsc],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -496,7 +522,7 @@ export function useRanking(search: string, page: number, sortBy: string, sortAsc
         hasVotos: false,
       };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -533,7 +559,7 @@ export function useCandidato(id: string) {
       return null;
     },
     enabled: !!id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -547,7 +573,7 @@ export function usePatrimonioCandidato(sq: string) {
     queryKey: ['patrimonioCandidato', sq, ano],
     queryFn: () => mdQuery(sqlBensCandidato(ano, sq)),
     enabled: !!sq,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -558,7 +584,7 @@ export function usePatrimonioCandidato(sq: string) {
 export function useCandidatosPorPartido() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['candidatosPorPartido', f],
+    queryKey: ['candidatosPorPartido', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -569,7 +595,7 @@ export function useCandidatosPorPartido() {
         `SELECT SG_PARTIDO AS partido, count(*) AS total FROM ${cand} ${where} GROUP BY SG_PARTIDO ORDER BY total DESC`
       ).then(rows => rows.map(r => ({ partido: r.partido, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -580,7 +606,7 @@ export function useCandidatosPorPartido() {
 export function useSituacaoFinal() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['situacao', f],
+    queryKey: ['situacao', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -591,7 +617,7 @@ export function useSituacaoFinal() {
         `SELECT COALESCE(DS_SIT_TOT_TURNO, 'NÃO DEFINIDO') AS nome, count(*) AS total FROM ${cand} ${where} GROUP BY nome ORDER BY total DESC`
       ).then(rows => rows.map(r => ({ nome: r.nome, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -602,7 +628,7 @@ export function useSituacaoFinal() {
 export function useTopOcupacoes() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['ocupacoes', f],
+    queryKey: ['ocupacoes', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -613,7 +639,7 @@ export function useTopOcupacoes() {
         `SELECT COALESCE(DS_OCUPACAO, 'NÃO INFORMADO') AS nome, count(*) AS total FROM ${cand} ${where} GROUP BY nome ORDER BY total DESC LIMIT 15`
       ).then(rows => rows.map(r => ({ nome: r.nome, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -624,7 +650,7 @@ export function useTopOcupacoes() {
 export function useCandidatosPorCargo() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['porCargo', f],
+    queryKey: ['porCargo', f.ano, f.municipio, f.partido],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -635,7 +661,7 @@ export function useCandidatosPorCargo() {
         `SELECT COALESCE(DS_CARGO, 'NÃO DEFINIDO') AS cargo, count(*) AS total FROM ${cand} ${where} GROUP BY cargo ORDER BY total DESC`
       ).then(rows => rows.map(r => ({ cargo: r.cargo, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -646,7 +672,7 @@ export function useCandidatosPorCargo() {
 export function useEleitos() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['eleitos', f],
+    queryKey: ['eleitos', f.ano, f.municipio, f.cargo, f.partido],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [
@@ -664,7 +690,7 @@ export function useEleitos() {
         FROM ${cand} ${where} ORDER BY NM_URNA_CANDIDATO LIMIT 100`
       );
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -678,23 +704,22 @@ export function useMunicipioResumo(municipio: string | null) {
     queryFn: async () => {
       if (!municipio) return null;
       const anos = getAnosDisponiveis('detalhe_munzona');
-      const queries = anos.map(async ano => {
-        try {
-          const rows = await mdQuery<{ apto: string; comp: string; abst: string }>(
-            `SELECT SUM(QT_APTOS) AS apto, SUM(QT_COMPARECIMENTO) AS comp, SUM(QT_ABSTENCOES) AS abst
-            FROM ${getTableName('detalhe_munzona', ano)} WHERE NM_MUNICIPIO = '${sqlSafe(municipio)}' AND NR_TURNO = 1`
-          );
-          const r = rows[0];
-          const apto = Number(r?.apto || 0);
-          return apto > 0 ? { ano, apto, comp: Number(r?.comp || 0), abst: Number(r?.abst || 0) } : null;
-        } catch { return null; }
+      const mun = sqlSafe(municipio);
+      const unions = anos.map(ano => {
+        const tbl = getTableName('detalhe_munzona', ano);
+        return `SELECT ${ano} AS ano, SUM(QT_APTOS) AS apto, SUM(QT_COMPARECIMENTO) AS comp, SUM(QT_ABSTENCOES) AS abst FROM ${tbl} WHERE NM_MUNICIPIO = '${mun}' AND NR_TURNO = 1`;
       });
-      const historico = (await Promise.all(queries)).filter(Boolean) as { ano: number; apto: number; comp: number; abst: number }[];
+      const rows = await mdQuery<{ ano: string; apto: string; comp: string; abst: string }>(
+        unions.join('\nUNION ALL\n') + '\nORDER BY ano'
+      );
+      const historico = rows
+        .map(r => ({ ano: Number(r.ano), apto: Number(r.apto || 0), comp: Number(r.comp || 0), abst: Number(r.abst || 0) }))
+        .filter(r => r.apto > 0);
       const totals = historico.reduce((acc, r) => ({ apto: acc.apto + r.apto, comp: acc.comp + r.comp, abst: acc.abst + r.abst }), { apto: 0, comp: 0, abst: 0 });
       return { totals, historico };
     },
     enabled: !!municipio,
-    staleTime: 10 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
   });
 }
 
@@ -713,7 +738,7 @@ export function useMunicipioCandidatos(municipio: string | null) {
       );
     },
     enabled: !!municipio,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -734,7 +759,7 @@ export function useMunicipioVotos(municipio: string | null) {
       } catch { return []; }
     },
     enabled: !!municipio,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -745,7 +770,7 @@ export function useMunicipioVotos(municipio: string | null) {
 export function useMunicipiosRanking() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['municipiosRanking', f],
+    queryKey: ['municipiosRanking', f.ano, f.cargo, f.partido],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -759,7 +784,7 @@ export function useMunicipiosRanking() {
         FROM ${cand} ${where} GROUP BY NM_UE ORDER BY total DESC`
       ).then(rows => rows.map(r => ({ municipio: r.municipio, total: Number(r.total), eleitos: Number(r.eleitos), mulheres: Number(r.mulheres) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -770,7 +795,7 @@ export function useMunicipiosRanking() {
 export function usePartidoResumo() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['partidosResumo', f],
+    queryKey: ['partidosResumo', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -788,14 +813,14 @@ export function usePartidoResumo() {
         hasVotos: false,
       };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
 export function usePartidoDetalhe(partido: string | null) {
   const f = useFilters();
   return useQuery({
-    queryKey: ['partidoDetalhe', partido, f],
+    queryKey: ['partidoDetalhe', partido, f.ano, f.municipio],
     queryFn: async () => {
       if (!partido) return [];
       const cand = getTableName('candidatos', f.ano);
@@ -809,7 +834,7 @@ export function usePartidoDetalhe(partido: string | null) {
       );
     },
     enabled: !!partido,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -835,7 +860,7 @@ export function useFilterOptions() {
         situacoes: situacoes.map(r => r.v),
       };
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -854,7 +879,7 @@ export function useDataAvailability() {
         comparecimento: true, comparecimentoSecao: true, locais: true,
       };
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
   });
 }
 
@@ -862,10 +887,10 @@ export function useCheckEmpty() {
   return useQuery({
     queryKey: ['checkEmpty'],
     queryFn: async () => {
-      const [r] = await mdQuery<{ total: string }>(`SELECT count(*) AS total FROM ${getTableName('candidatos', 2024)}`);
+      const [r] = await mdQuery<{ total: string }>(`SELECT count(*) AS total FROM ${getTableName('candidatos', 2024)} LIMIT 1`);
       return Number(r?.total || 0) === 0;
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
   });
 }
 
@@ -889,7 +914,7 @@ export function useComparecimentoPorBairro(municipio: string, ano?: number) {
       } catch { return []; }
     },
     enabled: !!municipio,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -910,7 +935,7 @@ export function useVotosPorLocal(municipio: string, ano?: number, bairro?: strin
       } catch { return []; }
     },
     enabled: !!municipio,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -936,7 +961,7 @@ export function useVotacaoPorZona(municipio?: string) {
       } catch { return []; }
     },
     enabled: !!mun,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -949,20 +974,18 @@ export function usePatrimonioEvolucaoAno() {
     queryKey: ['patrimonioEvolucao'],
     queryFn: async () => {
       const anos = getAnosDisponiveis('bens');
-      const results = await Promise.all(anos.map(async ano => {
-        try {
-          const [r] = await mdQuery<{ total: string; media: string; registros: string }>(
-            `SELECT SUM(CAST(REPLACE(VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS total,
-              AVG(CAST(REPLACE(VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS media,
-              count(*) AS registros
-            FROM ${getTableName('bens', ano)}`
-          );
-          return { ano, total: Number(r?.total || 0), media: Number(r?.media || 0), registros: Number(r?.registros || 0) };
-        } catch { return { ano, total: 0, media: 0, registros: 0 }; }
-      }));
-      return results.filter(r => r.registros > 0);
+      const unions = anos.map(ano => {
+        const tbl = getTableName('bens', ano);
+        return `SELECT ${ano} AS ano, SUM(CAST(REPLACE(VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS total, AVG(CAST(REPLACE(VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS media, count(*) AS registros FROM ${tbl}`;
+      });
+      const rows = await mdQuery<{ ano: string; total: string; media: string; registros: string }>(
+        unions.join('\nUNION ALL\n') + '\nORDER BY ano'
+      );
+      return rows
+        .map(r => ({ ano: Number(r.ano), total: Number(r.total || 0), media: Number(r.media || 0), registros: Number(r.registros || 0) }))
+        .filter(r => r.registros > 0);
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 60 * 60 * 1000,
   });
 }
 
@@ -988,14 +1011,14 @@ export function usePatrimonioDistribuicao() {
         FROM patri GROUP BY faixa ORDER BY min(total)`
       ).then(rows => rows.map(r => ({ faixa: r.faixa, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
 export function usePatrimonioPorPartido() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['patrimonioPorPartido', f],
+    queryKey: ['patrimonioPorPartido', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const bens = getTableName('bens', f.ano);
       const cand = getTableName('candidatos', f.ano);
@@ -1011,7 +1034,7 @@ export function usePatrimonioPorPartido() {
         ${where} GROUP BY c.SG_PARTIDO ORDER BY total DESC LIMIT 15`
       ).then(rows => rows.map(r => ({ partido: r.partido, total: Number(r.total), media: Number(r.media) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1024,22 +1047,20 @@ export function useEvolucaoPorAno() {
     queryKey: ['evolucaoAno'],
     queryFn: async () => {
       const anos = getAnosDisponiveis('candidatos');
-      const results = await Promise.all(anos.map(async ano => {
-        try {
-          const [r] = await mdQuery<{ total: string; mulheres: string; eleitos: string }>(
-            `SELECT count(*) AS total,
-              count(CASE WHEN DS_GENERO = 'FEMININO' THEN 1 END) AS mulheres,
-              count(CASE WHEN DS_SIT_TOT_TURNO ILIKE '%ELEITO%' AND DS_SIT_TOT_TURNO NOT ILIKE '%NÃO ELEITO%' THEN 1 END) AS eleitos
-            FROM ${getTableName('candidatos', ano)}`
-          );
-          const total = Number(r?.total || 0);
-          const mulheres = Number(r?.mulheres || 0);
-          return { ano, total, mulheres, eleitos: Number(r?.eleitos || 0), pctMulheres: total > 0 ? Math.round(mulheres / total * 100) : 0 };
-        } catch { return null; }
-      }));
-      return results.filter(Boolean).sort((a: any, b: any) => a.ano - b.ano);
+      const unions = anos.map(ano => {
+        const tbl = getTableName('candidatos', ano);
+        return `SELECT ${ano} AS ano, count(*) AS total, count(CASE WHEN DS_GENERO = 'FEMININO' THEN 1 END) AS mulheres, count(CASE WHEN DS_SIT_TOT_TURNO ILIKE '%ELEITO%' AND DS_SIT_TOT_TURNO NOT ILIKE '%NÃO ELEITO%' THEN 1 END) AS eleitos FROM ${tbl}`;
+      });
+      const rows = await mdQuery<{ ano: string; total: string; mulheres: string; eleitos: string }>(
+        unions.join('\nUNION ALL\n') + '\nORDER BY ano'
+      );
+      return rows.map(r => {
+        const total = Number(r.total || 0);
+        const mulheres = Number(r.mulheres || 0);
+        return { ano: Number(r.ano), total, mulheres, eleitos: Number(r.eleitos || 0), pctMulheres: total > 0 ? Math.round(mulheres / total * 100) : 0 };
+      }).filter(r => r.total > 0);
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 60 * 60 * 1000,
   });
 }
 
@@ -1048,29 +1069,26 @@ export function useComparativoAnos() {
     queryKey: ['comparativoAnos'],
     queryFn: async () => {
       const anos = getAnosDisponiveis('candidatos');
-      const results = await Promise.all(anos.map(async ano => {
-        try {
-          const [r] = await mdQuery<{ total: string; eleitos: string; mulheres: string; cargos: string }>(
-            `SELECT count(*) AS total,
-              count(CASE WHEN DS_SIT_TOT_TURNO ILIKE '%ELEITO%' AND DS_SIT_TOT_TURNO NOT ILIKE '%NÃO ELEITO%' THEN 1 END) AS eleitos,
-              count(CASE WHEN DS_GENERO = 'FEMININO' THEN 1 END) AS mulheres,
-              count(DISTINCT DS_CARGO) AS cargos
-            FROM ${getTableName('candidatos', ano)}`
-          );
-          const total = Number(r?.total || 0);
-          const mulheres = Number(r?.mulheres || 0);
-          const eleitos = Number(r?.eleitos || 0);
-          return {
-            ano, total, eleitos, mulheres,
-            pctMulheres: total > 0 ? Math.round((mulheres / total) * 100) : 0,
-            pctEleitos: total > 0 ? Math.round((eleitos / total) * 100) : 0,
-            cargos: Number(r?.cargos || 0),
-          };
-        } catch { return null; }
-      }));
-      return results.filter(Boolean).sort((a: any, b: any) => a.ano - b.ano);
+      const unions = anos.map(ano => {
+        const tbl = getTableName('candidatos', ano);
+        return `SELECT ${ano} AS ano, count(*) AS total, count(CASE WHEN DS_SIT_TOT_TURNO ILIKE '%ELEITO%' AND DS_SIT_TOT_TURNO NOT ILIKE '%NÃO ELEITO%' THEN 1 END) AS eleitos, count(CASE WHEN DS_GENERO = 'FEMININO' THEN 1 END) AS mulheres, count(DISTINCT DS_CARGO) AS cargos FROM ${tbl}`;
+      });
+      const rows = await mdQuery<{ ano: string; total: string; eleitos: string; mulheres: string; cargos: string }>(
+        unions.join('\nUNION ALL\n') + '\nORDER BY ano'
+      );
+      return rows.map(r => {
+        const total = Number(r.total || 0);
+        const mulheres = Number(r.mulheres || 0);
+        const eleitos = Number(r.eleitos || 0);
+        return {
+          ano: Number(r.ano), total, eleitos, mulheres,
+          pctMulheres: total > 0 ? Math.round((mulheres / total) * 100) : 0,
+          pctEleitos: total > 0 ? Math.round((eleitos / total) * 100) : 0,
+          cargos: Number(r.cargos || 0),
+        };
+      }).filter(r => r.total > 0);
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 60 * 60 * 1000,
   });
 }
 
@@ -1081,7 +1099,7 @@ export function useComparativoAnos() {
 export function useFaixaEtaria() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['faixaEtaria', f],
+    queryKey: ['faixaEtaria', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = ["DT_NASCIMENTO IS NOT NULL", "DT_NASCIMENTO != ''"];
@@ -1104,7 +1122,7 @@ export function useFaixaEtaria() {
         GROUP BY faixa ORDER BY faixa`
       ).then(rows => rows.map(r => ({ faixa: r.faixa, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1115,7 +1133,7 @@ export function useFaixaEtaria() {
 export function usePerfilCandidatos() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['perfilCandidatos', f],
+    queryKey: ['perfilCandidatos', f.ano, f.municipio, f.cargo],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = [];
@@ -1136,7 +1154,7 @@ export function usePerfilCandidatos() {
         ocupacoes: ocupacoes.map(r => ({ nome: r.nome, total: Number(r.total) })),
       };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1150,22 +1168,21 @@ export function useEvolucaoPatrimonio(nomeUrna: string) {
     queryFn: async () => {
       if (!nomeUrna) return [];
       const anos = getAnosDisponiveis('bens');
-      const results = await Promise.all(anos.map(async ano => {
-        try {
-          const [r] = await mdQuery<{ patrimonio: string }>(
-            `SELECT SUM(CAST(REPLACE(b.VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS patrimonio
-            FROM ${getTableName('bens', ano)} b
-            JOIN ${getTableName('candidatos', ano)} c ON b.SQ_CANDIDATO = c.SQ_CANDIDATO
-            WHERE c.NM_URNA_CANDIDATO = '${sqlSafe(nomeUrna)}'`
-          );
-          const p = Number(r?.patrimonio || 0);
-          return p > 0 ? { ano, patrimonio: p } : null;
-        } catch { return null; }
-      }));
-      return results.filter(Boolean).sort((a: any, b: any) => a.ano - b.ano);
+      const nome = sqlSafe(nomeUrna);
+      const unions = anos.map(ano => {
+        const bens = getTableName('bens', ano);
+        const cand = getTableName('candidatos', ano);
+        return `SELECT ${ano} AS ano, SUM(CAST(REPLACE(b.VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS patrimonio FROM ${bens} b JOIN ${cand} c ON b.SQ_CANDIDATO = c.SQ_CANDIDATO WHERE c.NM_URNA_CANDIDATO = '${nome}'`;
+      });
+      try {
+        const rows = await mdQuery<{ ano: string; patrimonio: string }>(
+          `SELECT * FROM (\n${unions.join('\nUNION ALL\n')}\n) t WHERE patrimonio > 0 ORDER BY ano`
+        );
+        return rows.map(r => ({ ano: Number(r.ano), patrimonio: Number(r.patrimonio || 0) }));
+      } catch { return []; }
     },
     enabled: !!nomeUrna,
-    staleTime: 10 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
   });
 }
 
@@ -1188,7 +1205,7 @@ export function useCandidatoVotos(nomeUrna: string, ano: number) {
       } catch { return []; }
     },
     enabled: !!nomeUrna && !!ano,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1199,7 +1216,7 @@ export function useCandidatoVotos(nomeUrna: string, ano: number) {
 export function useUfNascimento() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['uf-nascimento', f],
+    queryKey: ['uf-nascimento', f.ano, f.municipio],
     queryFn: async () => {
       const cand = getTableName('candidatos', f.ano);
       const conds: string[] = ["SG_UF_NASCIMENTO IS NOT NULL", "SG_UF_NASCIMENTO != ''"];
@@ -1209,7 +1226,7 @@ export function useUfNascimento() {
         `SELECT SG_UF_NASCIMENTO AS uf, count(*) AS total FROM ${cand} ${where} GROUP BY SG_UF_NASCIMENTO ORDER BY total DESC`
       ).then(rows => rows.map(r => ({ uf: r.uf, total: Number(r.total) })));
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1232,7 +1249,7 @@ export function useImportLogs() {
 export function useVotosBrancosNulos() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['votosBrancosNulos', f],
+    queryKey: ['votosBrancosNulos', f.ano, f.municipio],
     queryFn: async () => {
       const anos = getAnosDisponiveis('detalhe_munzona');
       const targetAnos = [f.ano];
@@ -1252,7 +1269,7 @@ export function useVotosBrancosNulos() {
       }));
       return results.filter(Boolean).sort((a: any, b: any) => a.ano - b.ano);
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1263,7 +1280,7 @@ export function useVotosBrancosNulos() {
 export function usePatrimonioVsVotos() {
   const f = useFilters();
   return useQuery({
-    queryKey: ['patrimonioVsVotos', f],
+    queryKey: ['patrimonioVsVotos', f.ano, f.municipio],
     queryFn: async () => {
       const bens = getTableName('bens', f.ano);
       const cand = getTableName('candidatos', f.ano);
@@ -1286,7 +1303,7 @@ export function usePatrimonioVsVotos() {
         );
       } catch { return []; }
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1307,7 +1324,7 @@ export function useVotosPorBairro(municipio?: string, sqCandidato?: string | nul
       return mdQuery(sql);
     },
     enabled: !!mun,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }
 
@@ -1324,6 +1341,6 @@ export function useEscolasPorBairro(bairro: string | null, municipio?: string, s
       return mdQuery(sql);
     },
     enabled: !!mun && !!bairro,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
   });
 }

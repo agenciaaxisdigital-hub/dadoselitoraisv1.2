@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFilterStore } from '@/stores/filterStore';
 import { useMunicipios, usePartidos, useCargos, useZonas, useBairros, useEscolas } from '@/hooks/useEleicoes';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,7 +29,13 @@ export function GlobalFilters({ visibleFilters = ALL_FILTERS }: GlobalFiltersPro
   const { data: bairros } = useBairros();
   const { data: escolas } = useEscolas();
   const [openMunicipio, setOpenMunicipio] = useState(false);
+  const [localSearch, setLocalSearch] = useState(store.searchText);
   const activeCount = store.activeFiltersCount();
+
+  useEffect(() => {
+    const timer = setTimeout(() => store.setSearchText(localSearch), 400);
+    return () => clearTimeout(timer);
+  }, [localSearch]);
 
   const show = (field: FilterField) => visibleFilters.includes(field);
 
@@ -51,8 +57,8 @@ export function GlobalFilters({ visibleFilters = ALL_FILTERS }: GlobalFiltersPro
             <div className="relative flex-1 min-w-[120px] max-w-[180px]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
               <Input
-                value={store.searchText}
-                onChange={e => store.setSearchText(e.target.value)}
+                value={localSearch}
+                onChange={e => setLocalSearch(e.target.value)}
                 placeholder="Buscar..."
                 className="pl-7 h-7 text-xs bg-muted/50 border-border/50"
               />

@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
-  Trophy, HelpCircle, Settings, School, Hash, User, Sparkles, Users,
+  Trophy, School, Hash, User, Users, BarChart3, UserCheck,
 } from 'lucide-react';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -10,7 +10,9 @@ import { cn } from '@/lib/utils';
 
 const mainItems = [
   { title: 'Dados Eleitorais', url: '/', icon: Trophy },
+  { title: 'Relatório de Votação', url: '/relatorio', icon: BarChart3 },
   { title: 'Perfil de Candidatos', url: '/candidatos', icon: User },
+  { title: 'Suplentes', url: '/suplentes', icon: UserCheck },
   { title: 'Zonas Eleitorais', url: '/zonas', icon: Hash },
   { title: 'Escolas Eleitorais', url: '/escolas', icon: School },
   { title: 'Mesários', url: '/mesarios', icon: Users },
@@ -19,17 +21,18 @@ const mainItems = [
 
 export function AppSidebar() {
   const location = useLocation();
-  const { state } = useSidebar();
+  const { state, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === 'collapsed';
 
   const MenuItem = ({ item }: { item: typeof mainItems[0] }) => {
-    const isActive = location.pathname === item.url || 
+    const isActive = location.pathname === item.url ||
       (item.url !== '/' && location.pathname.startsWith(item.url));
     return (
       <SidebarMenuItem>
         <SidebarMenuButton asChild>
           <Link
             to={item.url}
+            onClick={() => isMobile && setOpenMobile(false)}
             className={cn(
               'flex items-center gap-3 px-3 py-2 rounded-md transition-all text-sm',
               isActive

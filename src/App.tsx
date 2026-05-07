@@ -19,10 +19,15 @@ const Mesarios = lazy(() => import('./pages/Mesarios'));
 const PerfilCandidatos = lazy(() => import('./pages/PerfilCandidatos'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Ajuda = lazy(() => import('./pages/Ajuda'));
+const RelatorioVotacao = lazy(() => import('./pages/RelatorioVotacao'));
 const ChatEleicoes = lazy(() => import('./pages/ChatEleicoes'));
+const Financiamento = lazy(() => import('./pages/Financiamento'));
+const Eleitorado = lazy(() => import('./pages/Eleitorado'));
+const Pesquisas = lazy(() => import('./pages/Pesquisas'));
+const Suplentes = lazy(() => import('./pages/Suplentes'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-const HIDE_FILTERS = ['/ajuda', '/config', '/candidatos', '/candidato', '/perfil-candidatos', '/chat'];
+const HIDE_FILTERS = ['/ajuda', '/config', '/candidatos', '/candidato', '/perfil-candidatos', '/chat', '/pesquisas', '/suplentes'];
 
 const ROUTE_FILTERS: Record<string, FilterField[]> = {
   '/zonas': ['ano', 'municipio', 'cargo', 'turno'],
@@ -72,12 +77,17 @@ function Layout() {
                 <Route path="/zonas" element={<ZonasEleitorais />} />
                 <Route path="/escolas" element={<EscolasEleitorais />} />
                 <Route path="/mesarios" element={<Mesarios />} />
+                <Route path="/relatorio" element={<RelatorioVotacao />} />
+                <Route path="/suplentes" element={<Suplentes />} />
                 <Route path="/candidatos" element={<PerfilCandidatos />} />
                 <Route path="/candidatos/:id" element={<PerfilCandidatos />} />
                 <Route path="/candidatos/:id/:ano" element={<PerfilCandidatos />} />
                 <Route path="/config" element={<Configuracoes />} />
                 <Route path="/ajuda" element={<Ajuda />} />
                 <Route path="/chat" element={<ChatEleicoes />} />
+                <Route path="/financiamento" element={<Financiamento />} />
+                <Route path="/eleitorado" element={<Eleitorado />} />
+                <Route path="/pesquisas" element={<Pesquisas />} />
                 {/* Legacy redirects */}
                 <Route path="/resultado" element={<Ranking />} />
                 <Route path="/explorador" element={<Ranking />} />

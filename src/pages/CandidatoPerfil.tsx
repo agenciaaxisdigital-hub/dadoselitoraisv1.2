@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Award, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, ExternalLink, GraduationCap, Landmark, MapPinned, Search, Shield, TrendingUp, User, Users, Vote, XCircle } from 'lucide-react';
+import { ArrowLeft, Award, Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, ExternalLink, FileDown, GraduationCap, Landmark, MapPinned, Search, Shield, TrendingUp, User, Users, Vote, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   mdQuery,
@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatBRL, traduzirSituacao } from '@/lib/eleicoes';
+import { exportarPDF } from '@/lib/exportarPDF';
 import { cn } from '@/lib/utils';
 
 type AnyRow = Record<string, any>;
@@ -535,107 +536,250 @@ function PatrimonioSection({ bens, patrimonioTotal }: { bens: AnyRow[]; patrimon
 // COMPOSIÇÃO DE VOTOS — FULL BREAKDOWN (SCREENSHOT LAYOUT)
 // ═══════════════════════════════════════════════════════
 
+interface EscolaRow { bairro: string; escola: string; votos: number; secoes: number; }
+interface ZonaAgregada { zona: string; municipio: string; votos: number; escolas: EscolaRow[]; }
+
+function NI({ v }: { v: string }) {
+  return v === 'NÃO INFORMADO' || !v
+    ? <span className="italic text-muted-foreground/40">—</span>
+    : <>{v}</>;
+}
+
 function ComposicaoVotos({ dados, ano }: { dados: AnyRow[]; ano: number }) {
   const [busca, setBusca] = useState('');
+  const [expandedZonas, setExpandedZonas] = useState<Set<string>>(new Set());
 
-  const totalVotos = useMemo(() => dados.reduce((s, r) => s + Number(r.total_votos || 0), 0), [dados]);
-  const municipios = useMemo(() => {
-    const map = new Map<string, number>();
+  const totalVotos = useMemo(
+    () => dados.reduce((s, r) => s + Number(r.total_votos || 0), 0),
+    [dados],
+  );
+
+  const zonasAgregadas = useMemo((): ZonaAgregada[] => {
+    const map = new Map<string, ZonaAgregada>();
     for (const r of dados) {
-      const m = String(r.municipio || 'N/I');
-      map.set(m, (map.get(m) || 0) + Number(r.total_votos || 0));
+      const z   = String(r.zona      || '?');
+      const mun = String(r.municipio || '');
+      const votos  = Number(r.total_votos || 0);
+      const escola = String(r.escola  || 'NÃO INFORMADO');
+      const bairro = String(r.bairro  || 'NÃO INFORMADO');
+      const secoes = Number(r.secoes  || 0);
+
+      if (!map.has(z)) map.set(z, { zona: z, municipio: mun, votos: 0, escolas: [] });
+      const agg = map.get(z)!;
+      agg.votos += votos;
+      agg.escolas.push({ bairro, escola, votos, secoes });
     }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [dados]);
-  const zonas = useMemo(() => {
-    const map = new Map<string, { votos: number; municipio: string }>();
-    for (const r of dados) {
-      const z = String(r.zona || '');
-      const prev = map.get(z);
-      map.set(z, { votos: (prev?.votos || 0) + Number(r.total_votos || 0), municipio: String(r.municipio || '') });
-    }
-    return [...map.entries()].sort((a, b) => b[1].votos - a[1].votos);
-  }, [dados]);
-  const bairros = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of dados) {
-      const b = String(r.bairro || 'NÃO INFORMADO');
-      if (b === 'NÃO INFORMADO') continue;
-      map.set(b, (map.get(b) || 0) + Number(r.total_votos || 0));
-    }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [dados]);
-  const locais = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of dados) {
-      const e = String(r.escola || 'NÃO INFORMADO');
-      if (e === 'NÃO INFORMADO') continue;
-      map.set(e, (map.get(e) || 0) + Number(r.total_votos || 0));
-    }
-    return [...map.entries()];
+    for (const agg of map.values())
+      agg.escolas.sort((a, b) => b.votos - a.votos);
+    return [...map.values()].sort((a, b) => b.votos - a.votos);
   }, [dados]);
 
-  const filteredBairros = useMemo(() => {
-    if (!busca) return bairros;
+  const stats = useMemo(() => {
+    const escolas  = new Set<string>();
+    const bairros  = new Set<string>();
+    const municipios = new Set<string>();
+    let secoes = 0;
+    for (const z of zonasAgregadas) {
+      municipios.add(z.municipio);
+      for (const e of z.escolas) {
+        if (e.escola !== 'NÃO INFORMADO') escolas.add(e.escola);
+        if (e.bairro !== 'NÃO INFORMADO') bairros.add(e.bairro);
+        secoes += e.secoes;
+      }
+    }
+    return { escolas: escolas.size, bairros: bairros.size, municipios: municipios.size, secoes };
+  }, [zonasAgregadas]);
+
+  const zonasVisiveis = useMemo(() => {
+    if (!busca.trim()) return zonasAgregadas;
     const l = busca.toLowerCase();
-    return bairros.filter(([b]) => b.toLowerCase().includes(l));
-  }, [bairros, busca]);
+    return zonasAgregadas
+      .map(z => ({
+        ...z,
+        escolas: z.escolas.filter(
+          e => e.escola.toLowerCase().includes(l) || e.bairro.toLowerCase().includes(l),
+        ),
+        _zonMatch: z.zona.includes(l) || z.municipio.toLowerCase().includes(l),
+      }))
+      .filter(z => z._zonMatch || z.escolas.length > 0);
+  }, [zonasAgregadas, busca]);
+
+  function toggle(zona: string) {
+    setExpandedZonas(prev => {
+      const next = new Set(prev);
+      next.has(zona) ? next.delete(zona) : next.add(zona);
+      return next;
+    });
+  }
 
   return (
     <section className="bg-white rounded-xl border border-border p-4 space-y-4">
+      {/* ── Header ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <Users className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-slate-900">Composição de Votos</h3>
+        <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary">
+          Eleição {ano}
+        </Badge>
         <Badge className="bg-primary text-primary-foreground text-[10px]">
           {totalVotos.toLocaleString('pt-BR')} votos
         </Badge>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          className="pl-9 h-9 text-sm"
-          placeholder="Buscar por zona, bairro ou escola..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-        />
+      {/* ── KPIs ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <KpiCard label="Votos"          value={totalVotos.toLocaleString('pt-BR')} />
+        <KpiCard label="Zonas"          value={String(zonasAgregadas.length)} />
+        <KpiCard label="Bairros"        value={String(stats.bairros)} />
+        <KpiCard label="Escolas"        value={String(stats.escolas)} />
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Total de Votos" value={totalVotos.toLocaleString('pt-BR')} />
-        <KpiCard label="Municípios" value={String(municipios.length)} />
-        <KpiCard label="Zonas Eleitorais" value={String(zonas.length)} />
-        <KpiCard label="Bairros" value={String(bairros.length)} />
+      {/* ── Busca + ações ── */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            className="pl-9 h-8 text-sm"
+            placeholder="Buscar zona, bairro ou escola…"
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+          />
+        </div>
+        <button
+          onClick={() => setExpandedZonas(new Set(zonasAgregadas.map(z => z.zona)))}
+          className="text-[10px] px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
+        >
+          Expandir tudo
+        </button>
+        <button
+          onClick={() => setExpandedZonas(new Set())}
+          className="text-[10px] px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
+        >
+          Recolher
+        </button>
       </div>
 
-      {/* Votos por Município */}
-      {municipios.length > 0 && (
-        <VoteTable
-          title="VOTOS POR MUNICÍPIO"
-          columns={['Município', 'Votos', '%']}
-          rows={municipios.map(([m, v]) => [m, v.toLocaleString('pt-BR'), `${(totalVotos > 0 ? (v / totalVotos) * 100 : 0).toFixed(1)}%`, totalVotos > 0 ? (v / totalVotos) * 100 : 0])}
-        />
-      )}
+      {/* ── Árvore Zona → Escolas ── */}
+      <div className="space-y-1.5">
+        {zonasVisiveis.map((z) => {
+          const pct       = totalVotos > 0 ? (z.votos / totalVotos) * 100 : 0;
+          const expanded  = expandedZonas.has(z.zona);
+          const temDetail = z.escolas.length > 0;
 
-      {/* Votos por Bairro */}
-      {filteredBairros.length > 0 && (
-        <VoteTable
-          title="VOTOS POR BAIRRO"
-          columns={['Bairro', 'Votos', '%']}
-          rows={filteredBairros.map(([b, v]) => [b, v.toLocaleString('pt-BR'), `${(totalVotos > 0 ? (v / totalVotos) * 100 : 0).toFixed(1)}%`, totalVotos > 0 ? (v / totalVotos) * 100 : 0])}
-        />
-      )}
+          return (
+            <div key={z.zona} className={cn(
+              'rounded-lg border overflow-hidden transition-colors',
+              expanded ? 'border-primary/25' : 'border-border',
+            )}>
+              {/* Linha da zona */}
+              <button
+                onClick={() => temDetail && toggle(z.zona)}
+                className={cn(
+                  'flex items-center gap-3 w-full px-3 py-2.5 text-left transition-colors',
+                  temDetail ? 'hover:bg-muted/40 cursor-pointer' : 'cursor-default',
+                  expanded && 'bg-primary/5',
+                )}
+              >
+                {/* chevron */}
+                {temDetail
+                  ? expanded
+                    ? <ChevronUp   className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  : <span className="w-3.5 shrink-0" />
+                }
 
-      {/* Votos por Zona Eleitoral */}
-      {zonas.length > 0 && (
-        <VoteTable
-          title="VOTOS POR ZONA ELEITORAL"
-          columns={['Zona', 'Município', 'Votos', '%']}
-          rows={zonas.map(([z, d]) => [`Zona ${z}`, d.municipio, d.votos.toLocaleString('pt-BR'), `${(totalVotos > 0 ? (d.votos / totalVotos) * 100 : 0).toFixed(1)}%`, totalVotos > 0 ? (d.votos / totalVotos) * 100 : 0])}
-        />
-      )}
+                {/* zona label */}
+                <span className="font-mono text-sm font-bold text-slate-900 w-16 shrink-0">
+                  Zona {z.zona}
+                </span>
+
+                {/* município + contagem */}
+                <span className="text-xs text-muted-foreground flex-1 text-left truncate">
+                  {z.municipio}
+                  {temDetail && (
+                    <span className="ml-2 text-[10px] text-muted-foreground/50">
+                      · {z.escolas.length} {z.escolas.length === 1 ? 'escola' : 'escolas'}
+                    </span>
+                  )}
+                </span>
+
+                {/* votos */}
+                <span className="font-mono text-sm font-bold text-slate-900 shrink-0">
+                  {z.votos.toLocaleString('pt-BR')}
+                </span>
+
+                {/* % do total */}
+                <span className="font-mono text-xs text-muted-foreground w-12 text-right shrink-0">
+                  {pct.toFixed(1)}%
+                </span>
+
+                {/* barra */}
+                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(pct * 2, 100)}%` }} />
+                </div>
+              </button>
+
+              {/* Detalhe por escola */}
+              {expanded && temDetail && (
+                <div className="border-t border-border/40">
+                  {/* cabeçalho interno */}
+                  <div className="grid grid-cols-[2rem_1fr_1.6fr_4.5rem_3.5rem_3.5rem_4.5rem] gap-x-2 px-4 py-1.5 bg-muted/30 border-b border-border/30">
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">#</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Bairro</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Escola</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Seções</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Votos</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">% zona</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">% total</span>
+                  </div>
+
+                  {z.escolas.map((e, ei) => {
+                    const pctZona  = z.votos     > 0 ? (e.votos / z.votos)     * 100 : 0;
+                    const pctTotal = totalVotos  > 0 ? (e.votos / totalVotos)  * 100 : 0;
+                    return (
+                      <div
+                        key={ei}
+                        className="grid grid-cols-[2rem_1fr_1.6fr_4.5rem_4.5rem_3.5rem_3.5rem] gap-x-2 items-center px-4 py-1.5 border-b border-border/15 last:border-0 hover:bg-muted/20 transition-colors"
+                      >
+                        <span className="text-[10px] text-muted-foreground font-mono text-right">{ei + 1}</span>
+
+                        <span className="text-[11px] text-slate-500 truncate" title={e.bairro}>
+                          <NI v={e.bairro} />
+                        </span>
+
+                        <span className="text-[11px] text-slate-900 font-medium truncate" title={e.escola}>
+                          <NI v={e.escola} />
+                        </span>
+
+                        <span className="text-[11px] font-mono text-muted-foreground text-right">
+                          {e.secoes > 0 ? e.secoes : '—'}
+                        </span>
+
+                        <span className="text-[11px] font-mono font-bold text-slate-900 text-right">
+                          {e.votos.toLocaleString('pt-BR')}
+                        </span>
+
+                        <span className="text-[11px] font-mono text-muted-foreground text-right">
+                          {pctZona.toFixed(1)}%
+                        </span>
+
+                        <div className="flex items-center gap-1 justify-end">
+                          <span className="text-[11px] font-mono text-muted-foreground/70">
+                            {pctTotal.toFixed(1)}%
+                          </span>
+                          <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-primary/50" style={{ width: `${Math.min(pctZona * 2, 100)}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -1001,6 +1145,23 @@ export default function CandidatoPerfil() {
                 </div>
               </div>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              onClick={() => exportarPDF({
+                candidato: candidato as any,
+                ano,
+                composicao,
+                historico,
+                bens,
+                patrimonioTotal,
+                receitas,
+              })}
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              Exportar PDF
+            </Button>
           </div>
         </div>
 

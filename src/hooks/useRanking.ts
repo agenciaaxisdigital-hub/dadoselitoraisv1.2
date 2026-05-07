@@ -18,6 +18,33 @@ export interface RankingItem {
   tem_segundo_turno: boolean;
 }
 
+/** Tabela pré-computada pode ser usada quando não há filtros geo
+ *  e não é eleição geral com filtro de município
+ *  (no geral, votos são somados de todo o estado; não dá para filtrar por município na tabela pré-computada). */
+function canUsePrecomputed(ano: number, filtros: { municipio?: string | null; zona?: number | null; bairro?: string | null; escola?: string | null }): boolean {
+  if (filtros.zona || filtros.bairro || filtros.escola) return false;
+  if (isEleicaoGeral(ano) && filtros.municipio) return false;
+  return true;
+}
+
+function mapRow(r: any): RankingItem {
+  return {
+    SQ_CANDIDATO: String(r.SQ_CANDIDATO),
+    NM_CANDIDATO: r.NM_CANDIDATO,
+    NM_URNA_CANDIDATO: r.NM_URNA_CANDIDATO,
+    SG_PARTIDO: r.SG_PARTIDO,
+    DS_CARGO: r.DS_CARGO,
+    NM_UE: r.NM_UE,
+    DS_SIT_TOT_TURNO: r.DS_SIT_TOT_TURNO,
+    DS_GENERO: r.DS_GENERO,
+    total_votos: Number(r.total_votos || 0),
+    votos_turno1: Number(r.votos_turno1 || 0),
+    votos_turno2: Number(r.votos_turno2 || 0),
+    patrimonio_total: Number(r.patrimonio_total || 0),
+    tem_segundo_turno: Number(r.votos_turno2 || 0) > 0,
+  };
+}
+
 export const useRankingMD = () => {
   const ano = useFilterStore((s) => s.ano);
   const municipio = useFilterStore((s) => s.municipio);
@@ -32,23 +59,39 @@ export const useRankingMD = () => {
   return useQuery<RankingItem[]>({
     queryKey: ['ranking-md', ano, municipio, cargo, partido, turno, zona, bairro, escola, searchText],
     queryFn: async () => {
-      const cand = getTableName('candidatos', ano);
       const geral = isEleicaoGeral(ano);
       const hasGeo = !!(zona || bairro || escola);
-      // Always use votacao_candidato_munzona — votacao_secao has NO SQ_CANDIDATO
-      const vot = getTableName('votacao', ano);
 
+      // ── Fast path: tabela pré-computada (JOIN já feito, scan simples) ──
+      if (canUsePrecomputed(ano, { municipio, zona, bairro, escola })) {
+        const preTable = `my_db.ranking_pre_${ano}_GO`;
+        const conds: string[] = [];
+        if (municipio) conds.push(`NM_UE = '${municipio}'`);
+        if (cargo) conds.push(`DS_CARGO ILIKE '%${cargo}%'`);
+        if (partido) conds.push(`SG_PARTIDO = '${partido}'`);
+        if (turno) conds.push(`NR_TURNO = ${turno}`);
+        if (searchText) conds.push(`(NM_URNA_CANDIDATO ILIKE '%${searchText}%' OR NM_CANDIDATO ILIKE '%${searchText}%')`);
+        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+        try {
+          const rows = await mdQuery<any>(`
+            SELECT SQ_CANDIDATO, NM_CANDIDATO, NM_URNA_CANDIDATO, SG_PARTIDO, DS_CARGO, NM_UE,
+                   DS_SIT_TOT_TURNO, DS_GENERO, total_votos, votos_turno1, votos_turno2, patrimonio_total
+            FROM ${preTable} ${where}
+            ORDER BY total_votos DESC LIMIT 200
+          `);
+          return rows.map(mapRow);
+        } catch {
+          // Tabela pré-computada ainda não existe — cai no fallback abaixo
+        }
+      }
+
+      // ── Fallback: query completa com JOINs ──
+      const cand = getTableName('candidatos', ano);
+      const vot = getTableName('votacao', ano);
       const conds: string[] = [];
-      
-      // For general elections (2014/2018/2022), NM_UE is state name ("GOIÁS"),
-      // so we filter votes by NM_MUNICIPIO instead of filtering candidates by NM_UE
-      if (municipio && !geral) {
-        conds.push(`c.NM_UE = '${municipio}'`);
-      }
-      if (municipio && geral) {
-        conds.push(`v.NM_MUNICIPIO = '${municipio}'`);
-      }
-      
+
+      if (municipio && !geral) conds.push(`c.NM_UE = '${municipio}'`);
+      if (municipio && geral) conds.push(`v.NM_MUNICIPIO = '${municipio}'`);
       if (cargo) conds.push(`c.DS_CARGO ILIKE '%${cargo}%'`);
       if (partido) conds.push(`c.SG_PARTIDO = '${partido}'`);
       if (turno) conds.push(`c.NR_TURNO = ${turno}`);
@@ -57,10 +100,9 @@ export const useRankingMD = () => {
 
       let geoJoin = '';
       if (hasGeo && (bairro || escola)) {
-        // Find closest year with eleitorado_local data
         const anosLocal = getAnosDisponiveis('eleitorado_local');
         const anoLocal = anosLocal.includes(ano) ? ano : ([...anosLocal].sort((a, b) => Math.abs(a - ano) - Math.abs(b - ano))[0] || null);
-        if (!anoLocal) return []; // No eleitorado_local data available
+        if (!anoLocal) return [];
         const loc = getTableName('eleitorado_local', anoLocal);
         geoJoin = `INNER JOIN ${loc} loc ON v.NR_ZONA = loc.NR_ZONA AND v.NR_SECAO = loc.NR_SECAO AND loc.SG_UF = 'GO' AND loc.NM_MUNICIPIO = '${municipio}'`;
         if (bairro) conds.push(`loc.NM_BAIRRO = '${bairro}'`);
@@ -68,10 +110,8 @@ export const useRankingMD = () => {
       }
 
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-
-      // Patrimônio join (only if bens available for this year)
       const hasBens = getAnosDisponiveis('bens').includes(ano);
-      const bensJoin = hasBens 
+      const bensJoin = hasBens
         ? `LEFT JOIN (
             SELECT SQ_CANDIDATO, SUM(CAST(REPLACE(VR_BEM_CANDIDATO, ',', '.') AS DOUBLE)) AS patrimonio_total
             FROM ${getTableName('bens', ano)}
@@ -79,51 +119,26 @@ export const useRankingMD = () => {
           ) b ON c.SQ_CANDIDATO = b.SQ_CANDIDATO`
         : '';
 
-      // Deduplicate candidates across turnos: keep the row with the highest turno (final result)
       const sql = `
         SELECT
-          c.SQ_CANDIDATO,
-          c.NM_CANDIDATO,
-          c.NM_URNA_CANDIDATO,
-          c.SG_PARTIDO,
-          c.DS_CARGO,
-          c.NM_UE,
-          c.DS_SIT_TOT_TURNO,
-          c.DS_GENERO,
+          c.SQ_CANDIDATO, c.NM_CANDIDATO, c.NM_URNA_CANDIDATO, c.SG_PARTIDO, c.DS_CARGO,
+          c.NM_UE, c.DS_SIT_TOT_TURNO, c.DS_GENERO,
           COALESCE(SUM(v.QT_VOTOS_NOMINAIS), 0) AS total_votos,
           COALESCE(SUM(CASE WHEN v.NR_TURNO = 1 THEN v.QT_VOTOS_NOMINAIS ELSE 0 END), 0) AS votos_turno1,
           COALESCE(SUM(CASE WHEN v.NR_TURNO = 2 THEN v.QT_VOTOS_NOMINAIS ELSE 0 END), 0) AS votos_turno2,
           COALESCE(${hasBens ? 'b.patrimonio_total' : '0'}, 0) AS patrimonio_total
-        FROM (
-          SELECT *, ROW_NUMBER() OVER (PARTITION BY SQ_CANDIDATO ORDER BY NR_TURNO DESC) AS rn
-          FROM ${cand}
-        ) c
+        FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY SQ_CANDIDATO ORDER BY NR_TURNO DESC) AS rn FROM ${cand}) c
         LEFT JOIN ${vot} v ON c.SQ_CANDIDATO = v.SQ_CANDIDATO
         ${geoJoin}
         ${bensJoin}
         ${where ? where + ' AND c.rn = 1' : 'WHERE c.rn = 1'}
         GROUP BY c.SQ_CANDIDATO, c.NM_CANDIDATO, c.NM_URNA_CANDIDATO, c.SG_PARTIDO,
                  c.DS_CARGO, c.NM_UE, c.DS_SIT_TOT_TURNO, c.DS_GENERO${hasBens ? ', b.patrimonio_total' : ''}
-        ORDER BY total_votos DESC
-        LIMIT 200
+        ORDER BY total_votos DESC LIMIT 200
       `;
 
       const rows = await mdQuery<any>(sql);
-      return rows.map((r: any) => ({
-        SQ_CANDIDATO: String(r.SQ_CANDIDATO),
-        NM_CANDIDATO: r.NM_CANDIDATO,
-        NM_URNA_CANDIDATO: r.NM_URNA_CANDIDATO,
-        SG_PARTIDO: r.SG_PARTIDO,
-        DS_CARGO: r.DS_CARGO,
-        NM_UE: r.NM_UE,
-        DS_SIT_TOT_TURNO: r.DS_SIT_TOT_TURNO,
-        DS_GENERO: r.DS_GENERO,
-        total_votos: Number(r.total_votos || 0),
-        votos_turno1: Number(r.votos_turno1 || 0),
-        votos_turno2: Number(r.votos_turno2 || 0),
-        patrimonio_total: Number(r.patrimonio_total || 0),
-        tem_segundo_turno: Number(r.votos_turno2 || 0) > 0,
-      }));
+      return rows.map(mapRow);
     },
     staleTime: 15 * 60 * 1000,
   });
