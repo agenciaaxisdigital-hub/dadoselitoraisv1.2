@@ -8,11 +8,9 @@ import {
   getAnosDisponiveis,
   sqlPerfilCandidato,
   sqlPatrimonioCandidato,
-  sqlBensCandidato,
   sqlHistoricoComVotos,
   sqlVotosHistoricoPorZona,
   sqlVotosHistoricoPorLocal,
-  sqlVotacaoTerritorialDetalhada,
   sqlComposicaoVotosCandidato,
 } from '@/lib/motherduck';
 import { useFilterStore } from '@/stores/filterStore';
@@ -24,6 +22,8 @@ import { Badge } from '@/components/ui/badge';
 import { formatBRL, traduzirSituacao } from '@/lib/eleicoes';
 import { exportarPDF } from '@/lib/exportarPDF';
 import { cn } from '@/lib/utils';
+import { useMvBens, useMvVotosZona, useMvFinanceiro } from '@/hooks/mv/useMvCandidatoData';
+import { SkeletonDrillDown } from '@/components/eleicoes/SkeletonDrillDown';
 
 type AnyRow = Record<string, any>;
 
@@ -968,15 +968,7 @@ export default function CandidatoPerfil() {
     },
   });
 
-  const bensQ = useQuery({
-    queryKey: ['md', 'bens_lista', ano, sq],
-    enabled: !!sq && !!candidatoQ.data && canUseDataset('bens', ano),
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const rows = await mdQuery(sqlBensCandidato(ano, String(sq)));
-      return rows as AnyRow[];
-    },
-  });
+  const bensQ = useMvBens(sq, ano);
 
   // ── Receitas ──
   const receitasQ = useQuery({
@@ -990,6 +982,9 @@ export default function CandidatoPerfil() {
       return rows as AnyRow[];
     },
   });
+
+  // ── Financeiro consolidado — Supabase mv_ ──
+  const financeiroQ = useMvFinanceiro(sq, ano);
 
   // ── Redes sociais ──
   const redesQ = useQuery({
@@ -1026,21 +1021,8 @@ export default function CandidatoPerfil() {
     },
   });
 
-  // ── Votação territorial da eleição atual (fallback simples por zona) ──
-  const votacaoTerritorialQ = useQuery({
-    queryKey: ['md', 'votacao_territorial', ano, sq],
-    enabled: !!sq && !!candidatoQ.data,
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-    queryFn: async () => {
-      try {
-        const rows = await mdQuery(sqlVotacaoTerritorialDetalhada(ano, String(sq)));
-        return rows as AnyRow[];
-      } catch {
-        return [] as AnyRow[];
-      }
-    },
-  });
+  // ── Votação por zona — Supabase mv_ ──
+  const votacaoTerritorialQ = useMvVotosZona(sq, ano);
 
 
   // ── Histórico eleitoral (prioriza CPF, fallback para nome completo) ──
@@ -1190,8 +1172,7 @@ export default function CandidatoPerfil() {
         <ComposicaoVotos dados={composicao} ano={ano} />
       ) : votacaoTerritorialQ.isLoading ? (
         <section className="bg-white rounded-xl border border-border p-4 space-y-3">
-          <Skeleton className="h-5 w-48 mb-3" />
-          <Skeleton className="h-[200px] w-full" />
+          <SkeletonDrillDown rows={6} label="Carregando votos por zona..." />
         </section>
       ) : votacaoTerritorial.length > 0 ? (
         <ComposicaoVotosSimples dados={votacaoTerritorial} ano={ano} />
@@ -1201,10 +1182,22 @@ export default function CandidatoPerfil() {
       <HistoricoEleitoral historico={historico} currentAno={ano} />
 
       {/* ══════ PATRIMÔNIO (COLAPSÁVEL) ══════ */}
-      <PatrimonioSection bens={bens} patrimonioTotal={patrimonioTotal} />
+      {bensQ.isLoading ? (
+        <section className="bg-white rounded-xl border border-border p-4">
+          <SkeletonDrillDown rows={4} label="Carregando patrimônio..." />
+        </section>
+      ) : (
+        <PatrimonioSection bens={bens} patrimonioTotal={patrimonioTotal} />
+      )}
 
       {/* ══════ FINANÇAS ══════ */}
-      <FinancesSection receitas={receitas} />
+      {financeiroQ.isLoading ? (
+        <section className="bg-white rounded-xl border border-border p-4">
+          <SkeletonDrillDown rows={3} label="Carregando dados financeiros..." />
+        </section>
+      ) : (
+        <FinancesSection receitas={receitas} />
+      )}
 
       {/* ══════ REDES SOCIAIS ══════ */}
       <RedesSociaisSection redes={redes} />
