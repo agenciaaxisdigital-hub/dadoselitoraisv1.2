@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useRankingMD } from '@/hooks/useRanking';
+import { useMvRanking } from '@/hooks/mv/useMvRanking';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -8,12 +8,13 @@ import { Trophy, TrendingUp, Users, Landmark, Star, Search, X } from 'lucide-rea
 import { useFilterStore } from '@/stores/filterStore';
 import { Card, CardContent } from '@/components/ui/card';
 import { useMemo, useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LoadingKPIs, LoadingTable } from '@/components/eleicoes/LoadingSection';
 import { useSuplentesStore } from '@/stores/suplentesStore';
 import { cn } from '@/lib/utils';
 import { mdQuery, getTableName } from '@/lib/motherduck';
 import { Input } from '@/components/ui/input';
+import { supabase } from '@/integrations/supabase/client';
 
 function KPI({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
   return (
@@ -34,9 +35,26 @@ function KPI({ icon: Icon, label, value, sub }: { icon: any; label: string; valu
 
 export default function Ranking() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useRankingMD();
+  const { data, isLoading, isError, error } = useMvRanking();
   const { ano, municipio } = useFilterStore();
   const { suplentes, marcar, desmarcar } = useSuplentesStore();
+  const queryClient = useQueryClient();
+
+  const prefetchCandidatoBens = (sqCandidato: string) => {
+    queryClient.prefetchQuery({
+      queryKey: ['mv_bens', sqCandidato, ano],
+      queryFn: async () => {
+        const { data } = await supabase
+          .from('mv_candidato_bens')
+          .select('*')
+          .eq('sq_candidato', sqCandidato)
+          .eq('ano', ano)
+          .order('nr_ordem');
+        return data ?? [];
+      },
+      staleTime: Infinity,
+    });
+  };
   const [apenasSupl, setApenasSupl] = useState(false);
   const [suplCidade, setSuplCidade] = useState('');
   const [suplCidadeDb, setSuplCidadeDb] = useState('');
@@ -296,6 +314,7 @@ export default function Ranking() {
                         'border-b border-border/20 hover:bg-primary/5 cursor-pointer transition-colors',
                         marcado && 'bg-amber-50/40'
                       )}
+                      onMouseEnter={() => prefetchCandidatoBens(sq)}
                       onClick={() => navigate(`/candidatos/${item.SQ_CANDIDATO}/${ano}`)}
                     >
                       <TableCell className="px-1 py-1.5 w-7">
