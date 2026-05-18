@@ -13,10 +13,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MOTHERDUCK_TOKEN = os.environ["MOTHERDUCK_TOKEN"]
-SUPABASE_URL     = os.environ["SUPABASE_URL"]
-SUPABASE_KEY     = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
+
+def _require_env(key: str) -> str:
+    val = os.environ.get(key)
+    if not val:
+        sys.exit(f"[ERRO] Variável de ambiente obrigatória não encontrada: {key}")
+    return val
+
+
+MOTHERDUCK_TOKEN = _require_env("MOTHERDUCK_TOKEN")
+SUPABASE_URL     = _require_env("SUPABASE_URL")
+SUPABASE_KEY     = os.environ.get("SUPABASE_SERVICE_KEY") or _require_env("SUPABASE_KEY")
 BATCH_SIZE       = 500
+
 
 def get_md() -> duckdb.DuckDBPyConnection:
     return duckdb.connect(f"md:?motherduck_token={MOTHERDUCK_TOKEN}")
@@ -31,7 +40,11 @@ def upsert_batch(sb: Client, table: str, rows: list[dict]) -> None:
 
 def materializar_candidatos(md, sb, ano: int, uf: str, municipio: str | None) -> None:
     """Popula mv_candidatos a partir das tabelas TSE no MotherDuck."""
-    mun_filter = f"AND c.NM_UE = '{municipio}'" if municipio else ""
+    params = []
+    mun_filter = ""
+    if municipio:
+        mun_filter = "AND c.NM_UE = ?"
+        params.append(municipio)
 
     sql = f"""
         SELECT
@@ -76,11 +89,17 @@ def materializar_candidatos(md, sb, ano: int, uf: str, municipio: str | None) ->
     """
 
     print(f"Executando query candidatos {ano}_{uf}...")
-    result = md.execute(sql).fetchdf()
+    try:
+        result = md.execute(sql, params).fetchdf()
+    except Exception as e:
+        sys.exit(f"[ERRO] Falha ao consultar MotherDuck (tabela consulta_cand_{ano}_{uf}): {e}")
     print(f"  {len(result)} candidatos encontrados")
 
-    # Apagar registros anteriores desse ano/uf (idempotente)
-    sb.table("mv_candidatos").delete().eq("ano", ano).eq("uf", uf).execute()
+    # Apagar registros anteriores (idempotente)
+    delete_q = sb.table("mv_candidatos").delete().eq("ano", ano).eq("uf", uf)
+    if municipio:
+        delete_q = delete_q.eq("municipio_nome", municipio)
+    delete_q.execute()
 
     rows = result.assign(ano=ano, uf=uf).to_dict(orient="records")
     upsert_batch(sb, "mv_candidatos", rows)
