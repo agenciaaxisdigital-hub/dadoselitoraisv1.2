@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { mdQuery, getTableName, getAnosDisponiveis, sqlSafe } from '@/lib/motherduck';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
+import { Download, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { exportToCSV } from '@/lib/export';
 import { useFilterStore } from '@/stores/filterStore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMvPerfilEleitorado, useMvTotalEleitores } from '@/hooks/mv/useMvEleitorado';
 
 const COLORS = ['hsl(var(--primary))', '#34d399', '#f59e0b', '#f87171', '#a78bfa', '#60a5fa', '#fb923c', '#4ade80'];
 
@@ -35,84 +36,10 @@ function PieChartCard({ title, data }: { title: string; data: { name: string; va
   );
 }
 
-function closest(anos: number[], ano: number) {
-  return [...anos].sort((a, b) => Math.abs(a - ano) - Math.abs(b - ano))[0] ?? null;
-}
-
-function usePerfilEleitorado(municipio: string, ano: number) {
-  const anoEleitorado = closest(getAnosDisponiveis('perfil_eleitorado'), ano);
-
-  return useQuery({
-    queryKey: ['perfil-eleitorado', municipio, anoEleitorado],
-    enabled: !!anoEleitorado,
-    staleTime: 60 * 60 * 1000,
-    queryFn: async () => {
-      const tab = getTableName('perfil_eleitorado', anoEleitorado!);
-      const munCond = municipio ? `AND NM_MUNICIPIO = '${sqlSafe(municipio)}'` : '';
-
-      const [genero, faixaEtaria, escolaridade, estadoCivil] = await Promise.all([
-        mdQuery(`
-          SELECT DS_GENERO AS nome, SUM(QT_ELEITORES_PERFIL) AS value
-          FROM ${tab}
-          WHERE SG_UF = 'GO' ${munCond} AND DS_GENERO IS NOT NULL
-          GROUP BY DS_GENERO ORDER BY value DESC
-        `),
-        mdQuery(`
-          SELECT DS_FAIXA_ETARIA AS nome, SUM(QT_ELEITORES_PERFIL) AS value
-          FROM ${tab}
-          WHERE SG_UF = 'GO' ${munCond} AND DS_FAIXA_ETARIA IS NOT NULL
-          GROUP BY DS_FAIXA_ETARIA ORDER BY value DESC
-        `),
-        mdQuery(`
-          SELECT DS_GRAU_ESCOLARIDADE AS nome, SUM(QT_ELEITORES_PERFIL) AS value
-          FROM ${tab}
-          WHERE SG_UF = 'GO' ${munCond} AND DS_GRAU_ESCOLARIDADE IS NOT NULL
-          GROUP BY DS_GRAU_ESCOLARIDADE ORDER BY value DESC
-        `),
-        mdQuery(`
-          SELECT DS_ESTADO_CIVIL AS nome, SUM(QT_ELEITORES_PERFIL) AS value
-          FROM ${tab}
-          WHERE SG_UF = 'GO' ${munCond} AND DS_ESTADO_CIVIL IS NOT NULL
-          GROUP BY DS_ESTADO_CIVIL ORDER BY value DESC
-        `),
-      ]);
-
-      return {
-        genero: (genero as any[]).map(r => ({ name: String(r.nome), value: Number(r.value) })),
-        faixaEtaria: (faixaEtaria as any[]).map(r => ({ name: String(r.nome), value: Number(r.value) })),
-        escolaridade: (escolaridade as any[]).map(r => ({ name: String(r.nome), value: Number(r.value) })),
-        estadoCivil: (estadoCivil as any[]).map(r => ({ name: String(r.nome), value: Number(r.value) })),
-        anoReferencia: anoEleitorado,
-      };
-    },
-  });
-}
-
-function useTotalEleitores(municipio: string, ano: number) {
-  const anoLocal = closest(getAnosDisponiveis('eleitorado_local'), ano);
-  return useQuery({
-    queryKey: ['total-eleitores', municipio, anoLocal],
-    enabled: !!anoLocal,
-    staleTime: 60 * 60 * 1000,
-    queryFn: async () => {
-      const tab = getTableName('eleitorado_local', anoLocal!);
-      const munCond = municipio ? `AND NM_MUNICIPIO = '${sqlSafe(municipio)}'` : '';
-      const rows = await mdQuery<{ total: string }>(`
-        SELECT SUM(QT_ELEITOR_SECAO) AS total
-        FROM ${tab}
-        WHERE SG_UF = 'GO' ${munCond}
-      `);
-      return Number(rows[0]?.total || 0);
-    },
-  });
-}
-
 export default function Eleitorado() {
-  const ano = useFilterStore((s) => s.ano);
-  const municipio = useFilterStore((s) => s.municipio);
-
-  const perfilQ = usePerfilEleitorado(municipio, ano);
-  const totalQ = useTotalEleitores(municipio, ano);
+  const { ano, municipio } = useFilterStore();
+  const perfilQ = useMvPerfilEleitorado();
+  const totalQ = useMvTotalEleitores();
 
   const perfil = perfilQ.data;
   const totalEleitores = totalQ.data || 0;
@@ -141,14 +68,35 @@ export default function Eleitorado() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-base font-bold text-foreground">Perfil do Eleitorado</h1>
-        <p className="text-xs text-muted-foreground">
-          {municipio || 'Goiás'} — referência {perfil?.anoReferencia ?? '…'}
-          {perfil?.anoReferencia !== ano && perfil?.anoReferencia && (
-            <span className="text-amber-600 ml-1">(ano mais próximo disponível)</span>
-          )}
-        </p>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-base font-bold text-foreground">Perfil do Eleitorado</h1>
+          <p className="text-xs text-muted-foreground">
+            {municipio || 'Goiás'} — referência {perfil?.anoReferencia ?? ano}
+          </p>
+        </div>
+        {perfil && (
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => exportToCSV(
+            (perfil.genero || []).map((d: any) => ({
+              Dimensão: 'Gênero', Categoria: d.name, Total: d.value,
+            })).concat(
+              (perfil.faixaEtaria || []).map((d: any) => ({
+                Dimensão: 'Faixa Etária', Categoria: d.name, Total: d.value,
+              }))
+            ).concat(
+              (perfil.estadoCivil || []).map((d: any) => ({
+                Dimensão: 'Estado Civil', Categoria: d.name, Total: d.value,
+              }))
+            ).concat(
+              (perfil.escolaridade || []).map((d: any) => ({
+                Dimensão: 'Escolaridade', Categoria: d.name, Total: d.value,
+              }))
+            ),
+            'perfil-eleitorado'
+          )}>
+            <Download className="w-3 h-3" /> CSV
+          </Button>
+        )}
       </div>
 
       {/* Total */}

@@ -4,6 +4,6 @@ duckdb
 mangum
 python-dotenv
 supabase
-google-generativeai
+groq>=1.2.0
 upstash-redis
 pydantic

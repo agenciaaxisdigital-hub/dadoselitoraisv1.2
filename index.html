@@ -3,28 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
-    <title>EleiçõesGO — Inteligência Eleitoral</title>
-    <meta name="description" content="Painel de inteligência eleitoral de Goiás — Dados, candidatos, zonas e escolas eleitorais" />
-    <meta name="author" content="Dra. Fernanda Sarelli" />
-    <meta name="theme-color" content="#EC4899" />
+    <title>AXISPOLITIC — Sistema Eleitoral Goiano</title>
+    <meta name="description" content="Plataforma de inteligência eleitoral de Goiás — Dados, candidatos, zonas e escolas eleitorais" />
+    <meta name="author" content="AXISPOLITIC" />
+    <meta name="theme-color" content="#1e3a5f" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="EleiçõesGO" />
+    <meta name="apple-mobile-web-app-title" content="AXISPOLITIC" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
 
     <!-- Preload Google Fonts: non-blocking -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" /></noscript>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800;900&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800;900&display=swap" /></noscript>
 
-    <meta property="og:title" content="EleiçõesGO — Inteligência Eleitoral" />
-    <meta property="og:description" content="Painel de inteligência eleitoral de Goiás" />
+    <meta property="og:title" content="AXISPOLITIC — Sistema Eleitoral Goiano" />
+    <meta property="og:description" content="Plataforma de inteligência eleitoral de Goiás" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
 
     <style>
       #splash-screen {
@@ -40,18 +38,18 @@
       }
       #splash-screen.hide { opacity: 0; pointer-events: none; }
       #splash-logo {
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1a1a2e;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: #1e3a5f;
         margin-bottom: 1.5rem;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.01em;
       }
-      #splash-logo span { color: #EC4899; }
+      #splash-logo span { color: #2b76c0; }
       .splash-bar {
         width: 200px;
         height: 3px;
-        background: #f1f5f9;
+        background: #dde8f5;
         border-radius: 4px;
         overflow: hidden;
         position: relative;
@@ -60,7 +58,7 @@
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(90deg, #EC4899, #C8AA64);
+        background: linear-gradient(90deg, #1e3a5f, #2b76c0);
         border-radius: 4px;
         animation: splash-progress 1.8s ease-in-out infinite;
         transform-origin: left;
@@ -70,10 +68,20 @@
         50% { transform: scaleX(0.6) translateX(30%); }
         100% { transform: scaleX(0) translateX(100%); }
       }
+      .splash-subtitle {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 0.6rem;
+        font-weight: 600;
+        color: #4a6a8a;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-top: -1rem;
+        margin-bottom: 1.5rem;
+      }
       .splash-text {
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 0.75rem;
-        color: #94a3b8;
+        color: #6b8aaa;
         margin-top: 1rem;
       }
     </style>
@@ -81,9 +89,11 @@
 
   <body>
     <div id="splash-screen">
-      <div id="splash-logo">Eleições<span>GO</span></div>
+      <img src="/logo-axis.jpg" alt="Axis" style="width:64px;height:64px;object-fit:contain;margin-bottom:12px;opacity:0.85;" />
+      <div id="splash-logo">AXIS<span>POLITIC</span></div>
+      <div class="splash-subtitle">Sistema Eleitoral Goiano</div>
       <div class="splash-bar"></div>
-      <div class="splash-text">Carregando inteligência eleitoral…</div>
+      <div class="splash-text">Carregando dados eleitorais…</div>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

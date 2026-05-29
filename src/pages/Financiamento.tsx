@@ -1,29 +1,20 @@
 import { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ScatterChart, Scatter, CartesianGrid } from 'recharts';
-import { DollarSign, TrendingUp, Users, Award } from 'lucide-react';
-import { useRankingFinanciamento, useOrigemReceitas, useTopDoadores, useCustoVoto } from '@/hooks/useFinanceiro';
+import { DollarSign, TrendingUp, Users, Award, Download } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
+import { Button } from '@/components/ui/button';
+import { useOrigemReceitas, useTopDoadores } from '@/hooks/useFinanceiro';
+import { useMvRankingFinanciamento, useMvCustoVoto } from '@/hooks/mv/useMvFinanciamento';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonDrillDown } from '@/components/eleicoes/SkeletonDrillDown';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatBRL, traduzirSituacao } from '@/lib/eleicoes';
+import { formatBRL, traduzirSituacao, getPartidoCor } from '@/lib/eleicoes';
 import { useFilterStore } from '@/stores/filterStore';
 import { getAnosDisponiveis } from '@/lib/motherduck';
+import { KPICard, MiniBar, PartyBadge, PageHeader } from '@/components/eleicoes/VisualKit';
 
-function KpiCard({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
-      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-primary" />
-      </div>
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-        <div className="text-lg font-bold text-foreground leading-tight">{value}</div>
-        {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
-      </div>
-    </div>
-  );
-}
 
 function getSitColor(sit: string | null) {
   if (!sit) return 'bg-muted text-muted-foreground';
@@ -41,10 +32,10 @@ export default function Financiamento() {
   const finAnosDisponiveis = getAnosDisponiveis('receitas');
   const anoDisponivel = finAnosDisponiveis.includes(ano);
 
-  const rankingQ = useRankingFinanciamento(100);
+  const rankingQ = useMvRankingFinanciamento(100);
   const origemQ = useOrigemReceitas();
   const doadoresQ = useTopDoadores(50);
-  const custoQ = useCustoVoto(200);
+  const custoQ = useMvCustoVoto(200);
 
   const ranking = (rankingQ.data || []) as any[];
   const origem = (origemQ.data || []) as any[];
@@ -75,10 +66,10 @@ export default function Financiamento() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={DollarSign} label="Total arrecadado" value={rankingQ.isLoading ? '…' : formatBRL(totalArrecadado)} />
-        <KpiCard icon={Users} label="Candidatos c/ receitas" value={rankingQ.isLoading ? '…' : String(totalCandidatos)} />
-        <KpiCard icon={TrendingUp} label="Média por candidato" value={rankingQ.isLoading ? '…' : formatBRL(mediaArrecadacao)} />
-        <KpiCard icon={Award} label="Maior arrecadador" value={rankingQ.isLoading ? '…' : formatBRL(Number(ranking[0]?.total_receitas || 0))} sub={ranking[0]?.candidato} />
+        <KPICard icon={DollarSign} label="Total arrecadado" value={rankingQ.isLoading ? '…' : formatBRL(totalArrecadado)} />
+        <KPICard icon={Users} label="Candidatos c/ receitas" value={rankingQ.isLoading ? '…' : String(totalCandidatos)} />
+        <KPICard icon={TrendingUp} label="Média por candidato" value={rankingQ.isLoading ? '…' : formatBRL(mediaArrecadacao)} />
+        <KPICard icon={Award} label="Maior arrecadador" value={rankingQ.isLoading ? '…' : formatBRL(Number(ranking[0]?.total_receitas || 0))} sub={ranking[0]?.candidato} />
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -95,6 +86,24 @@ export default function Financiamento() {
             <div className="space-y-2">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
             <div className="rounded-xl border border-border overflow-hidden">
+              <div className="px-3 py-2 bg-muted/40 border-b border-border/30 flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Ranking financeiro</span>
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+                  onClick={() => exportToCSV(
+                    ranking.map((r: any) => ({
+                      Candidato: r.candidato || '',
+                      Partido: r.partido || '',
+                      Cargo: r.cargo || '',
+                      'Total Receitas': r.total_receitas || 0,
+                      'Total Votos': r.total_votos || 0,
+                      'Custo por Voto': r.custo_por_voto || 0,
+                      Situacao: r.situacao || '',
+                    })),
+                    'financiamento'
+                  )}>
+                  <Download className="w-3 h-3" /> CSV
+                </Button>
+              </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -136,7 +145,7 @@ export default function Financiamento() {
         {/* ── ORIGEM ── */}
         <TabsContent value="origem">
           {origemQ.isLoading ? (
-            <Skeleton className="h-64 w-full" />
+            <SkeletonDrillDown label="Carregando origens das receitas..." />
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl border border-border p-4 h-72">
@@ -184,7 +193,7 @@ export default function Financiamento() {
         {/* ── DOADORES ── */}
         <TabsContent value="doadores">
           {doadoresQ.isLoading ? (
-            <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            <SkeletonDrillDown label="Carregando maiores doadores..." />
           ) : (
             <div className="rounded-xl border border-border overflow-hidden">
               <Table>

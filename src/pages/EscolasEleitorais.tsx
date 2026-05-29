@@ -1,37 +1,24 @@
 import { useState, useMemo } from 'react';
-import { useEscolas } from '@/hooks/useEscolas';
+import { useMvEscolas } from '@/hooks/mv/useMvEscolas';
 import { useFilterStore } from '@/stores/filterStore';
 import { useComparecimento } from '@/hooks/useEleicoes';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Building2, MapPin, Search, Users, School, Hash, Vote,
+  Building2, Download, MapPin, Search, Users, School, Hash, Vote,
 } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
 import { formatNumber, formatPercent } from '@/lib/eleicoes';
 import { LoadingKPIs, LoadingCards } from '@/components/eleicoes/LoadingSection';
+import { KPICard, MiniBar, PageHeader } from '@/components/eleicoes/VisualKit';
 
 const fmt = (n: number | string) => Number(n || 0).toLocaleString('pt-BR');
 
-function KPI({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string; sub?: string }) {
-  return (
-    <Card className="bg-card border-border/50">
-      <CardContent className="p-3 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-primary" />
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-          <p className="text-lg font-bold text-foreground">{value}</p>
-          {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function useLocaisVotacaoSupa(ano: number, municipio: string) {
   return useQuery({
@@ -52,7 +39,7 @@ function useLocaisVotacaoSupa(ano: number, municipio: string) {
 }
 
 export default function EscolasEleitorais() {
-  const { data, isLoading, isError, error } = useEscolas();
+  const { data, isLoading, isError, error } = useMvEscolas();
   const { data: comparecimento } = useComparecimento();
   const { municipio, ano } = useFilterStore();
   const [busca, setBusca] = useState('');
@@ -87,7 +74,7 @@ export default function EscolasEleitorais() {
 
   const totalEscolas = escolas.length;
   const totalSecoes = escolas.reduce((s, e) => s + e.qtd_secoes, 0);
-  const totalEleitores = escolas.reduce((s, e) => s + (e.eleitores || 0), 0);
+  const totalEleitores = escolas.reduce((s, e) => s + (e.total_eleitores || 0), 0);
   const totalZonas = new Set(escolas.map(e => e.zona)).size;
   const comp = comparecimento?.[0] as any;
 
@@ -102,35 +89,45 @@ export default function EscolasEleitorais() {
 
   return (
     <div className="space-y-3 sm:space-y-4 max-w-[1800px] mx-auto">
-      <div>
-        <h1 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
-          <School className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-          Escolas Eleitorais
-        </h1>
-        <p className="text-[10px] sm:text-xs text-muted-foreground">{municipio} · {ano} — Locais de votação, seções e eleitores</p>
-      </div>
+      <PageHeader icon={School} title="Locais de Votação" subtitle={`${municipio} · ${ano} — Escolas, seções e eleitores`} />
 
       {isLoading ? (
         <LoadingKPIs count={5} />
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-5">
-          <KPI icon={School} label="Escolas" value={fmt(totalEscolas)} />
-          <KPI icon={Hash} label="Zonas" value={fmt(totalZonas)} />
-          <KPI icon={Building2} label="Seções" value={fmt(totalSecoes)} />
-          <KPI icon={Users} label="Eleitores" value={fmt(totalEleitores)} />
-          <KPI icon={Vote} label="Comparecimento" value={comp ? formatPercent(Number(comp.taxa_comparecimento)) : '—'}
+          <KPICard icon={School} label="Escolas" value={fmt(totalEscolas)} />
+          <KPICard icon={Hash} label="Zonas" value={fmt(totalZonas)} />
+          <KPICard icon={Building2} label="Seções" value={fmt(totalSecoes)} />
+          <KPICard icon={Users} label="Eleitores" value={fmt(totalEleitores)} />
+          <KPICard icon={Vote} label="Comparecimento" value={comp ? formatPercent(Number(comp.taxa_comparecimento)) : '—'}
             sub={comp ? `${fmt(Number(comp.comparecimento))} presentes` : undefined} />
         </div>
       )}
 
-      <div className="relative w-full sm:max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar escola, bairro, zona ou endereço..."
-          className="pl-9 h-8 text-xs bg-card border-border/50"
-          value={busca}
-          onChange={e => setBusca(e.target.value)}
-        />
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar escola, bairro, zona ou endereço..."
+            className="pl-9 h-8 text-xs bg-card border-border/50"
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+          />
+        </div>
+        {escolas.length > 0 && (
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => exportToCSV(
+            escolas.map((e: any) => ({
+              Escola: e.escola || '',
+              Setor: e.setor || '',
+              Zona: e.zona || '',
+              Seções: e.qtd_secoes || 0,
+              Eleitores: e.total_eleitores || 0,
+            })),
+            'escolas-eleitorais'
+          )}>
+            <Download className="w-3 h-3" /> CSV
+          </Button>
+        )}
       </div>
 
       {isError && (
@@ -149,7 +146,7 @@ export default function EscolasEleitorais() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
           {filtered.map((escola, idx) => {
-            const pct = totalEleitores > 0 ? (escola.eleitores / totalEleitores) * 100 : 0;
+            const pct = totalEleitores > 0 ? (escola.total_eleitores / totalEleitores) * 100 : 0;
             return (
               <div key={idx} className="bg-card rounded-xl border border-border/50 shadow-sm p-4 animate-fade-in" style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}>
                 <div className="min-w-0">
@@ -168,8 +165,8 @@ export default function EscolasEleitorais() {
                 </div>
                 <div className="mt-3 flex items-center gap-2 flex-wrap border-t border-border/20 pt-2">
                   <Badge variant="outline" className="text-[9px] h-5">{escola.qtd_secoes} seções</Badge>
-                  {escola.eleitores > 0 && (
-                    <Badge variant="secondary" className="text-[9px] h-5">{fmt(escola.eleitores)} eleitores</Badge>
+                  {escola.total_eleitores > 0 && (
+                    <Badge variant="secondary" className="text-[9px] h-5">{fmt(escola.total_eleitores)} eleitores</Badge>
                   )}
                   <Badge variant="outline" className="text-[9px] h-5 text-muted-foreground">
                     {formatPercent(pct, 1)} do total
@@ -183,7 +180,7 @@ export default function EscolasEleitorais() {
 
       {!isLoading && escolas.length > 0 && (
         <p className="text-[10px] text-muted-foreground text-right">
-          {totalEscolas} escolas · {totalSecoes} seções · {fmt(totalEleitores)} eleitores · Fonte: TSE/MotherDuck + Supabase
+          {totalEscolas} escolas · {totalSecoes} seções · {fmt(totalEleitores)} eleitores · Fonte: TSE/Supabase
         </p>
       )}
     </div>

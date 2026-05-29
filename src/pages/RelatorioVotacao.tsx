@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRankingMD } from '@/hooks/useRanking';
+import { useMvRanking } from '@/hooks/mv/useMvRanking';
+import { useMvComparecimento } from '@/hooks/mv/useMvDashboard';
 import {
-  useComparecimento,
-  useRankingPartidos,
-  useVotosBrancosNulos,
-  useDistribuicaoGenero,
-  useVotacaoPorZona,
-  useSituacaoFinal,
-} from '@/hooks/useEleicoes';
+  useMvRankingPartidos,
+  useMvVotosBrancosNulos,
+  useMvDistribuicaoGenero,
+  useMvVotacaoPorZona,
+  useMvSituacaoFinal,
+} from '@/hooks/mv/useMvRelatorio';
 import { useFilterStore } from '@/stores/filterStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,47 +16,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { LoadingKPIs, LoadingTable } from '@/components/eleicoes/LoadingSection';
 import { formatNumber, formatPercent, getPartidoCor, getSituacaoBadge } from '@/lib/eleicoes';
-import { BarChart3, Users, Vote, TrendingDown, MapPin, PieChart, CheckCircle2 } from 'lucide-react';
-
-function KPI({ icon: Icon, label, value, sub, color = 'text-primary' }: {
-  icon: any; label: string; value: string; sub?: string; color?: string;
-}) {
-  return (
-    <Card className="bg-card border-border/50">
-      <CardContent className="p-3 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <Icon className={`w-4 h-4 ${color}`} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-          <p className="text-lg font-bold text-foreground">{value}</p>
-          {sub && <p className="text-[10px] text-muted-foreground truncate">{sub}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  return (
-    <div className="h-1.5 bg-muted rounded-full overflow-hidden w-16 sm:w-24">
-      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-    </div>
-  );
-}
+import { BarChart3, Users, Vote, TrendingDown, MapPin, PieChart, CheckCircle2, ChevronRight } from 'lucide-react';
+import { KPICard, MiniBar, PartyBadge, PageHeader } from '@/components/eleicoes/VisualKit';
 
 export default function RelatorioVotacao() {
   const navigate = useNavigate();
   const { ano, municipio } = useFilterStore();
 
-  const ranking = useRankingMD();
-  const comparecimento = useComparecimento();
-  const partidos = useRankingPartidos(30);
-  const brancosNulos = useVotosBrancosNulos();
-  const genero = useDistribuicaoGenero();
-  const situacao = useSituacaoFinal();
-  const zonas = useVotacaoPorZona(municipio);
+  const ranking = useMvRanking();
+  const fetchingRanking = ranking.isFetching && !ranking.isLoading;
+  const comparecimento = useMvComparecimento();
+  const partidos = useMvRankingPartidos(30);
+  const brancosNulos = useMvVotosBrancosNulos();
+  const genero = useMvDistribuicaoGenero();
+  const situacao = useMvSituacaoFinal();
+  const zonas = useMvVotacaoPorZona(municipio);
 
   const stats = useMemo(() => {
     if (!ranking.data?.length) return null;
@@ -71,15 +45,13 @@ export default function RelatorioVotacao() {
 
   const compStats = useMemo(() => {
     if (!comparecimento.data?.length) return null;
-    const acc = (comparecimento.data as any[]).reduce(
-      (a, d) => ({
-        aptos: a.aptos + Number(d.eleitores || 0),
-        comp: a.comp + Number(d.comparecimento || 0),
-        abst: a.abst + Number(d.abstencoes || 0),
-      }),
-      { aptos: 0, comp: 0, abst: 0 }
-    );
-    return { ...acc, taxa: acc.aptos > 0 ? (acc.comp / acc.aptos) * 100 : 0 };
+    const d = comparecimento.data[0] as any;
+    return {
+      aptos: Number(d.eleitores || 0),
+      comp:  Number(d.comparecimento || 0),
+      abst:  Number(d.abstencoes || 0),
+      taxa:  Number(d.taxa_comparecimento || 0),
+    };
   }, [comparecimento.data]);
 
   const bnStats = useMemo(() => {
@@ -99,25 +71,16 @@ export default function RelatorioVotacao() {
 
   return (
     <div className="space-y-3 sm:space-y-4 max-w-[1800px] mx-auto">
-      <div>
-        <h1 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-          Relatório de Votação
-        </h1>
-        <p className="text-[10px] sm:text-xs text-muted-foreground">
-          {municipio || 'Goiás'} · {ano} — Análise completa: candidatos, partidos, comparecimento e perfil
-        </p>
-      </div>
+      <PageHeader icon={BarChart3} title="Relatório de Votação" subtitle={`${municipio || 'Goiás'} · ${ano} — Análise completa: candidatos, partidos, comparecimento e perfil`} />
 
-      {/* KPIs */}
       {ranking.isLoading ? (
         <LoadingKPIs count={4} />
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          <KPI icon={Vote} label="Total de Votos" value={formatNumber(stats?.totalVotos ?? 0)} sub={`${stats?.total ?? 0} candidatos`} />
-          <KPI icon={CheckCircle2} label="Eleitos" value={formatNumber(stats?.eleitos ?? 0)} sub={`de ${stats?.total ?? 0} candidatos`} color="text-emerald-500" />
-          <KPI icon={Users} label="Comparecimento" value={compStats ? formatPercent(compStats.taxa) : '—'} sub={compStats ? formatNumber(compStats.comp) + ' eleitores' : undefined} color="text-blue-500" />
-          <KPI icon={TrendingDown} label="Abstenção" value={compStats ? formatPercent(100 - compStats.taxa) : '—'} sub={compStats ? formatNumber(compStats.abst) + ' eleitores' : undefined} color="text-amber-500" />
+          <KPICard icon={Vote} label="Total de Votos" value={formatNumber(stats?.totalVotos ?? 0)} sub={`${stats?.total ?? 0} candidatos`} />
+          <KPICard icon={CheckCircle2} label="Eleitos" value={formatNumber(stats?.eleitos ?? 0)} sub={`de ${stats?.total ?? 0} candidatos`} color="text-emerald-500" />
+          <KPICard icon={Users} label="Comparecimento" value={compStats ? formatPercent(compStats.taxa) : '—'} sub={compStats ? formatNumber(compStats.comp) + ' eleitores' : undefined} color="text-blue-500" />
+          <KPICard icon={TrendingDown} label="Abstenção" value={compStats ? formatPercent(100 - compStats.taxa) : '—'} sub={compStats ? formatNumber(compStats.abst) + ' eleitores' : undefined} color="text-amber-500" />
         </div>
       )}
 
@@ -133,7 +96,7 @@ export default function RelatorioVotacao() {
         {/* ── CANDIDATOS ── */}
         <TabsContent value="candidatos" className="mt-3">
           {ranking.isLoading ? <LoadingTable rows={15} cols={9} /> : (
-            <div className="bg-card rounded-lg border border-border/50 overflow-hidden">
+            <div className={`bg-card rounded-lg border border-border/50 overflow-hidden transition-opacity duration-150 ${fetchingRanking ? 'opacity-60' : 'opacity-100'}`}>
               <div className="overflow-x-auto">
                 <Table className="w-full text-sm">
                   <TableHeader>
@@ -156,13 +119,18 @@ export default function RelatorioVotacao() {
                       return (
                         <TableRow
                           key={item.SQ_CANDIDATO ?? idx}
-                          className="border-b border-border/20 hover:bg-primary/5 cursor-pointer transition-colors"
+                          className="group border-b border-border/20 hover:bg-primary/5 cursor-pointer transition-colors"
                           onClick={() => navigate(`/candidatos/${item.SQ_CANDIDATO}/${ano}`)}
                         >
                           <TableCell className="px-2 py-1.5 text-muted-foreground font-mono text-xs">{idx + 1}</TableCell>
                           <TableCell className="px-2 py-1.5">
-                            <span className="font-semibold text-xs">{item.NM_URNA_CANDIDATO}</span>
-                            <p className="text-[10px] text-muted-foreground">{item.NM_CANDIDATO}</p>
+                            <div className="flex items-center gap-1">
+                              <div className="min-w-0">
+                                <span className="font-semibold text-xs group-hover:text-primary group-hover:underline underline-offset-2 transition-colors">{item.NM_URNA_CANDIDATO}</span>
+                                <p className="text-[10px] text-muted-foreground">{item.NM_CANDIDATO}</p>
+                              </div>
+                              <ChevronRight className="w-3 h-3 text-muted-foreground/30 group-hover:text-primary transition-colors shrink-0 ml-1" />
+                            </div>
                           </TableCell>
                           <TableCell className="px-2 py-1.5">
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded"
@@ -438,7 +406,7 @@ export default function RelatorioVotacao() {
       </Tabs>
 
       <p className="text-[10px] text-muted-foreground text-right">
-        {ranking.data?.length ?? 0} candidatos · Fonte: TSE/MotherDuck · {ano}
+        {ranking.data?.length ?? 0} candidatos · Fonte: TSE · {ano}
       </p>
     </div>
   );

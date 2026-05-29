@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, Search, Star, Trash2, UserCheck } from 'lucide-react';
-import { mdQuery, getTableName } from '@/lib/motherduck';
+import { Check, ChevronsUpDown, Download, Search, Star, Trash2, UserCheck } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
 import { useMunicipios } from '@/hooks/useEleicoes';
+import { useMvSuplentes } from '@/hooks/mv/useMvSuplentes';
 import { useSuplentesStore } from '@/stores/suplentesStore';
 import { useFilterStore } from '@/stores/filterStore';
 import { Input } from '@/components/ui/input';
@@ -28,55 +28,7 @@ export default function Suplentes() {
   const [ano, setAno] = useState(globalFilters.ano || 2024);
   const { data: municipios = [] } = useMunicipios();
 
-  const safe = (s: string) => s.replace(/'/g, "''");
-
-  const suplQ = useQuery({
-    queryKey: ['supls-page', ano, cidade],
-    enabled: tab === 'buscar' && cidade.length >= 2,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const cidSafe = safe(cidade);
-      const rs = ano === 2024 ? getTableName('rede_social', 2024) : null;
-      const rsJoin = rs
-        ? `LEFT JOIN (SELECT SQ_CANDIDATO, MIN(DS_URL) AS instagram_url FROM ${rs} WHERE DS_URL ILIKE '%instagram.com%' GROUP BY SQ_CANDIDATO) rs ON c.SQ_CANDIDATO = rs.SQ_CANDIDATO`
-        : '';
-      const rsSelect = rs ? `, rs.instagram_url` : `, NULL AS instagram_url`;
-
-      // Tenta tabela pré-computada + rede_social
-      try {
-        const rows = await mdQuery(`
-          SELECT p.SQ_CANDIDATO AS sq, p.NM_URNA_CANDIDATO AS nome, p.NM_CANDIDATO AS nome_completo,
-                 p.SG_PARTIDO AS partido, p.DS_CARGO AS cargo, p.NM_UE AS municipio,
-                 p.NR_CANDIDATO AS numero, p.total_votos${rs ? `, rs.instagram_url` : `, NULL AS instagram_url`}
-          FROM my_db.ranking_pre_${ano}_GO p
-          ${rs ? `LEFT JOIN (SELECT SQ_CANDIDATO, MIN(DS_URL) AS instagram_url FROM ${rs} WHERE DS_URL ILIKE '%instagram.com%' GROUP BY SQ_CANDIDATO) rs ON p.SQ_CANDIDATO = rs.SQ_CANDIDATO` : ''}
-          WHERE upper(p.NM_UE) = upper('${cidSafe}')
-            AND upper(p.DS_SIT_TOT_TURNO) = 'SUPLENTE'
-          ORDER BY p.DS_CARGO, p.total_votos DESC
-          LIMIT 300
-        `);
-        if (rows && (rows as any[]).length > 0) return rows;
-      } catch { /* fallback abaixo */ }
-
-      // Fallback: JOIN candidatos + votacao + rede_social
-      let cand: string, vot: string;
-      try { cand = getTableName('candidatos', ano); vot = getTableName('votacao', ano); } catch { return []; }
-      return mdQuery(`
-        SELECT c.SQ_CANDIDATO AS sq, c.NM_URNA_CANDIDATO AS nome, c.NM_CANDIDATO AS nome_completo,
-               c.SG_PARTIDO AS partido, c.DS_CARGO AS cargo, c.NM_UE AS municipio,
-               c.NR_CANDIDATO AS numero, COALESCE(SUM(v.QT_VOTOS_NOMINAIS), 0) AS total_votos${rsSelect}
-        FROM ${cand} c
-        LEFT JOIN ${vot} v ON c.SQ_CANDIDATO = v.SQ_CANDIDATO
-        ${rsJoin}
-        WHERE upper(c.NM_UE) = upper('${cidSafe}')
-          AND upper(c.DS_SIT_TOT_TURNO) = 'SUPLENTE'
-        GROUP BY c.SQ_CANDIDATO, c.NM_URNA_CANDIDATO, c.NM_CANDIDATO, c.SG_PARTIDO,
-                 c.DS_CARGO, c.NM_UE, c.NR_CANDIDATO${rs ? `, rs.instagram_url` : ''}
-        ORDER BY c.DS_CARGO, total_votos DESC
-        LIMIT 300
-      `);
-    },
-  });
+  const suplQ = useMvSuplentes(cidade, ano);
 
   const meusList = useMemo(
     () => Object.values(suplentes).sort((a, b) => a.municipio.localeCompare(b.municipio) || a.cargo.localeCompare(b.cargo)),
@@ -207,9 +159,25 @@ export default function Suplentes() {
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   {(suplQ.data as any[]).length} suplente{(suplQ.data as any[]).length !== 1 ? 's' : ''} — {cidade} · {ano}
                 </span>
-                {totalMarcados > 0 && (
-                  <span className="text-xs text-amber-600 font-semibold">{totalMarcados} marcado{totalMarcados !== 1 ? 's' : ''}</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {totalMarcados > 0 && (
+                    <span className="text-xs text-amber-600 font-semibold">{totalMarcados} marcado{totalMarcados !== 1 ? 's' : ''}</span>
+                  )}
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => exportToCSV(
+                    (suplQ.data as any[]).map((s: any) => ({
+                      Nome: s.nome || '',
+                      Partido: s.partido || '',
+                      Cargo: s.cargo || '',
+                      Município: s.municipio || '',
+                      Número: s.numero || '',
+                      Votos: s.total_votos || 0,
+                      Situação: s.situacao || '',
+                    })),
+                    'suplentes'
+                  )}>
+                    <Download className="w-3 h-3" /> CSV
+                  </Button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <Table>

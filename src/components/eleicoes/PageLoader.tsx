@@ -1,51 +1,78 @@
-import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
 
-/**
- * Animated page-level loading indicator used as Suspense fallback.
- * Shows a pulsing skeleton layout that matches the app's structure.
- */
+const MESSAGES = [
+  'Carregando dados eleitorais…',
+  'Processando resultados…',
+  'Preparando visualizações…',
+  'Quase lá…',
+];
+
 export function PageLoader({ label }: { label?: string }) {
+  const [msgIdx, setMsgIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setMsgIdx(i => (i + 1) % MESSAGES.length), 1800);
+    return () => clearInterval(t);
+  }, []);
+
   return (
-    <div className="flex flex-col gap-4 animate-fade-in">
-      {/* KPI row skeleton */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="bg-card rounded-lg border border-border/40 p-4 flex items-start gap-3"
-            style={{ animationDelay: `${i * 80}ms` }}
-          >
-            <div className="w-10 h-10 rounded-lg bg-muted animate-pulse" />
-            <div className="flex-1 space-y-2">
-              <div className="h-3 w-16 rounded bg-muted animate-pulse" />
-              <div className="h-6 w-24 rounded bg-muted animate-pulse" />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Main content skeleton */}
-      <div className="bg-card rounded-xl border border-border/40 p-5 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="h-5 w-40 rounded bg-muted animate-pulse" />
-          <div className="h-5 w-20 rounded bg-muted animate-pulse" />
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background gap-6">
+      {/* Logo Axis */}
+      <div className="flex flex-col items-center gap-3">
+        <img
+          src="/logo-axis.jpg"
+          alt="Agência Axis"
+          style={{ width: 72, height: 72, objectFit: 'contain' }}
+        />
+        <div className="text-center">
+          <p style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: '1.1rem', letterSpacing: '-0.01em' }}
+            className="text-foreground">
+            AXIS<span className="text-primary">POLITIC</span>
+          </p>
+          <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', marginTop: 2 }}
+            className="text-muted-foreground uppercase">
+            Sistema Eleitoral Goiano
+          </p>
         </div>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="flex items-center gap-3"
-            style={{ animationDelay: `${i * 60}ms` }}
-          >
-            <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
-            <div className="h-4 flex-1 rounded bg-muted animate-pulse" style={{ maxWidth: `${60 + Math.random() * 30}%` }} />
-            <div className="h-4 w-16 rounded bg-muted animate-pulse" />
-          </div>
-        ))}
       </div>
 
-      {label && (
-        <p className="text-xs text-muted-foreground text-center animate-pulse">{label}</p>
-      )}
+      {/* Barra de progresso */}
+      <div className="w-48 h-[3px] rounded-full bg-muted overflow-hidden relative">
+        <div
+          className="absolute inset-y-0 rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary) / 0.5))',
+            animation: 'loader-bar 1.6s ease-in-out infinite',
+          }}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground min-h-[1rem] transition-opacity duration-300">
+        {label ?? MESSAGES[msgIdx]}
+      </p>
+
+      {/* Skeleton */}
+      <div className="w-full max-w-2xl px-6 mt-2 space-y-3 opacity-40">
+        <div className="grid grid-cols-4 gap-2">
+          {[80, 64, 72, 56].map((w, i) => (
+            <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+          ))}
+        </div>
+        <div className="space-y-2">
+          {[100, 85, 90, 70, 80].map((w, i) => (
+            <div key={i} className="h-7 rounded bg-muted animate-pulse"
+              style={{ width: `${w}%`, animationDelay: `${i * 80}ms` }} />
+          ))}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes loader-bar {
+          0%   { left: -40%; width: 40%; }
+          50%  { left: 30%; width: 50%; }
+          100% { left: 110%; width: 40%; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
 import { useFilterStore } from '@/stores/filterStore'
 import type { RankingItem } from '@/hooks/useRanking'
@@ -53,6 +53,7 @@ export function useMvRanking() {
         tem_segundo_turno: Boolean(r.tem_segundo_turno),
       }))
     },
+    placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60 * 24,
   })

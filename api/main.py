@@ -5,8 +5,14 @@ Hospedagem: Vercel Serverless Function via Mangum (ASGI adapter).
 """
 
 import os
+import json
+import hashlib
 import logging
 from typing import Optional
+
+from dotenv import load_dotenv
+import pathlib
+load_dotenv(pathlib.Path(__file__).parent.parent / ".env")
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -15,9 +21,7 @@ from mangum import Mangum
 from pydantic import BaseModel, Field
 
 # INTEGRAÇÃO IA
-from api.chat_service import processar_chat, ChatRequest
-
-from chat_service import ChatRequest, ChatResponse, processar_chat
+from api.chat_service import processar_chat, ChatRequest, ChatResponse
 
 # ---------------------------------------------------------------------------
 # Configuração de logging
@@ -36,14 +40,62 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# CORS permissivo para desenvolvimento; restringir `origins` em produção.
+# CORS flexível: lê da variável de ambiente ALLOWED_ORIGINS (valores separados por vírgula)
+# Default para "*" se não estiver definido para manter compatibilidade em desenvolvimento.
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Cache Redis (Upstash) — reutiliza credenciais do chat_service
+# ---------------------------------------------------------------------------
+_redis_client = None
+
+def get_redis():
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    url = os.getenv("UPSTASH_REDIS_REST_URL")
+    token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+    if not url or not token:
+        return None
+    try:
+        from upstash_redis import Redis
+        _redis_client = Redis(url=url, token=token)
+        return _redis_client
+    except Exception:
+        return None
+
+def _cache_key(prefix: str, params: dict) -> str:
+    raw = f"{prefix}:{json.dumps(params, sort_keys=True)}"
+    return f"md:{hashlib.sha256(raw.encode()).hexdigest()[:20]}"
+
+def _cache_get(key: str):
+    redis = get_redis()
+    if not redis:
+        return None
+    try:
+        v = redis.get(key)
+        return json.loads(v) if v else None
+    except Exception:
+        return None
+
+def _cache_set(key: str, data, ttl: int = 3600):
+    redis = get_redis()
+    if not redis:
+        return
+    try:
+        redis.set(key, json.dumps(data, ensure_ascii=False, default=str), ex=ttl)
+    except Exception as e:
+        logger.warning("Redis set falhou: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +241,12 @@ def ranking_candidatos(payload: RankingPayload):
     - **municipio**: Filtra por município de nascimento (opcional).
     - **cargo**: Filtra por cargo disputado (opcional).
     """
+    key = _cache_key("ranking", {"ano": payload.ano, "municipio": payload.municipio, "cargo": payload.cargo})
+    cached = _cache_get(key)
+    if cached is not None:
+        logger.info("Cache HIT | ranking | ano=%s", payload.ano)
+        return RankingResponse(status="sucesso", total_registros=len(cached), dados=cached)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -204,9 +262,9 @@ def ranking_candidatos(payload: RankingPayload):
 
         result = cursor.execute(query, params).fetchall()
         col_names = [desc[0] for desc in cursor.description]
-
         rows = [dict(zip(col_names, row)) for row in result]
 
+        _cache_set(key, rows, ttl=3600)
         return RankingResponse(
             status="sucesso",
             total_registros=len(rows),
@@ -214,7 +272,7 @@ def ranking_candidatos(payload: RankingPayload):
         )
 
     except HTTPException:
-        raise  # re-propaga erros HTTP já formatados
+        raise
     except Exception as exc:
         logger.exception("Erro ao executar query de ranking.")
         raise HTTPException(
@@ -235,6 +293,11 @@ def territorio_candidato(
     ano: int = Query(..., description="Ano eleitoral"),
 ):
     """Retorna a distribuição de votos por zona, bairro e escola."""
+    key = _cache_key("territorio", {"sq": sq_candidato, "ano": ano})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -255,6 +318,7 @@ def territorio_candidato(
         result = cursor.execute(query, [sq_candidato]).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=3600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao consultar força territorial.")
@@ -275,6 +339,11 @@ def bens_candidato(
     """
     Retorna a lista de bens: DS_TIPO_BEM_CANDIDATO, DS_BEM_CANDIDATO e VR_BEM_CANDIDATO.
     """
+    key = _cache_key("bens", {"sq": sq_candidato, "ano": ano})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -290,6 +359,7 @@ def bens_candidato(
         result = cursor.execute(query, [sq_candidato]).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=3600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao consultar bens.")
@@ -310,6 +380,11 @@ def receitas_candidato(
     """
     Retorna doações e receitas: NM_DOADOR, VR_RECEITA, DS_ORIGEM_RECEITA.
     """
+    key = _cache_key("receitas", {"sq": sq_candidato, "ano": ano})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -325,6 +400,7 @@ def receitas_candidato(
         result = cursor.execute(query, [sq_candidato]).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=3600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao consultar receitas.")
@@ -346,21 +422,26 @@ def listar_escolas(
     municipio: Optional[str] = Query(None, description="Município"),
     zona: Optional[str] = Query(None, description="Zona Eleitoral"),
 ):
+    key = _cache_key("escolas", {"ano": ano, "municipio": municipio, "zona": zona})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         where_clauses = []
         params = []
-        
+
         if municipio:
             where_clauses.append("UPPER(NM_MUNICIPIO) = UPPER(?)")
             params.append(municipio)
         if zona:
             where_clauses.append("NR_ZONA = ?")
             params.append(zona)
-            
+
         where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-            
+
         query = f"""
             SELECT
                 NM_LOCVOT AS escola,
@@ -376,6 +457,7 @@ def listar_escolas(
         result = cursor.execute(query, params).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=21600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao listar escolas.")
@@ -393,6 +475,11 @@ def listar_pessoal(
     zona: str = Query(..., description="Zona Eleitoral"),
     secao: str = Query(..., description="Seção"),
 ):
+    key = _cache_key("pessoal", {"ano": ano, "zona": zona, "secao": secao})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -407,6 +494,7 @@ def listar_pessoal(
         result = cursor.execute(query, [zona, secao]).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=21600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao listar lideranças de campo.")
@@ -426,14 +514,18 @@ def mapa_votos(
     ano: int = Query(..., description="Ano eleitoral"),
     sq_candidato: int = Query(..., description="SQ_CANDIDATO"),
 ):
+    key = _cache_key("mapa_votos", {"ano": ano, "sq": sq_candidato})
+    cached = _cache_get(key)
+    if cached is not None:
+        return {"status": "sucesso", "total": len(cached), "dados": cached}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # A CTE calcula o total da seção antes de filtrar pelo candidato
         query = f"""
             WITH TotaisSecao AS (
-                SELECT 
-                    NR_ZONA, 
+                SELECT
+                    NR_ZONA,
                     NR_SECAO,
                     SUM(QT_VOTOS_NOMINAIS) as total_votos_secao
                 FROM votacao_secao_{ano}_GO
@@ -458,6 +550,7 @@ def mapa_votos(
         result = cursor.execute(query, [sq_candidato]).fetchall()
         col_names = [desc[0] for desc in cursor.description]
         rows = [dict(zip(col_names, r)) for r in result]
+        _cache_set(key, rows, ttl=3600)
         return {"status": "sucesso", "total": len(rows), "dados": rows}
     except Exception as exc:
         logger.exception("Erro ao gerar Deep Drill-Down.")

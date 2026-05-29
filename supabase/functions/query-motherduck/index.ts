@@ -3,6 +3,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// ── In-memory query cache (persists within the same Edge Function instance) ──
+const queryCache = new Map<string, { rows: any[]; ts: number }>();
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min — alinhado ao staleTime do frontend
+
+function cacheGet(sql: string): any[] | null {
+  const entry = queryCache.get(sql);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) { queryCache.delete(sql); return null; }
+  return entry.rows;
+}
+
+function cacheSet(sql: string, rows: any[]): void {
+  if (queryCache.size >= 300) {
+    // Evict oldest entry to cap memory
+    let oldestKey = '';
+    let oldestTs = Infinity;
+    for (const [k, v] of queryCache) {
+      if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; }
+    }
+    if (oldestKey) queryCache.delete(oldestKey);
+  }
+  queryCache.set(sql, { rows: Array.from(rows), ts: Date.now() });
+}
+
 // ── Persistent connection pool (reused across requests) ──
 let pgPool: any = null;
 let lastActivity = 0;
@@ -71,9 +95,20 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Cache check — skip for mutations (already blocked above, but defensive)
+    const cached = cacheGet(sql);
+    if (cached) {
+      return new Response(
+        JSON.stringify({ rows: cached, rowCount: cached.length, fromCache: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await getPool();
     const rows = await pool.unsafe(sql);
     const columns = rows.columns?.map((c: any) => ({ name: c.name, type: c.type })) || [];
+
+    cacheSet(sql, rows);
 
     return new Response(
       JSON.stringify({ columns, rows, rowCount: rows.length }),

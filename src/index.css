@@ -1,73 +1,101 @@
-/* Fonts loaded via <link preload> in index.html for non-blocking render */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    /* MODO CLARO - Dossiê 360º LinkedIn Style */
-    --background: 0 0% 100%; /* bg-white */
-    --foreground: 220 17% 7%; /* texto escuro */
+    /* LIGHT MODE — Agência Axis brand (azul aço / cinza metálico) */
+    --background: 220 14% 97%;
+    --foreground: 222 28% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 17% 7%;
+    --card-foreground: 222 28% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 17% 7%;
+    --popover-foreground: 222 28% 11%;
 
-    --primary: 330 81% 60%; /* #EC4899 - Sarelli Pink */
+    /* Axis — azul aço */
+    --primary: 213 60% 44%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 42 47% 59%; /* #C8AA64 - Accent Gold */
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 218 16% 92%;
+    --secondary-foreground: 222 28% 11%;
 
-    --muted: 220 14% 96%; /* bg-slate-100 */
-    --muted-foreground: 220 8% 46%; /* text-slate-500 */
+    --muted: 218 16% 92%;
+    --muted-foreground: 215 10% 48%;
 
-    --accent: 42 47% 59%; /* Accent Gold */
-    --accent-foreground: 0 0% 100%;
+    --accent: 218 16% 92%;
+    --accent-foreground: 222 28% 11%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 156 72% 40%;
+    --success: 142 60% 40%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 45 93% 50%;
+    --warning: 38 82% 50%;
     --warning-foreground: 0 0% 10%;
 
-    --info: 200 80% 55%;
-    --info-foreground: 0 0% 100%;
+    --border: 216 14% 88%;
+    --input: 216 14% 88%;
+    --ring: 213 60% 44%;
 
-    --border: 220 13% 91%; /* border-slate-200 */
-    --input: 220 13% 91%;
-    --ring: 330 81% 60%;
+    --radius: 0.5rem;
 
-    --radius: 1rem; /* rounded-2xl = 16px */
-
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 17% 7%;
-    --sidebar-primary: 330 81% 60%;
+    /* SIDEBAR — dark navy Axis */
+    --sidebar-background: 222 30% 9%;
+    --sidebar-foreground: 215 16% 78%;
+    --sidebar-primary: 213 60% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 96%;
-    --sidebar-accent-foreground: 220 17% 7%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 330 81% 60%;
+    --sidebar-accent: 222 26% 14%;
+    --sidebar-accent-foreground: 215 16% 78%;
+    --sidebar-border: 222 26% 16%;
+    --sidebar-ring: 213 60% 56%;
 
-    --chart-1: 330 81% 60%;
-    --chart-2: 42 47% 59%;
-    --chart-3: 156 72% 40%;
-    --chart-4: 45 93% 50%;
-    --chart-5: 280 60% 55%;
+    --chart-1: 213 60% 44%;
+    --chart-2: 142 60% 40%;
+    --chart-3: 38 82% 50%;
+    --chart-4: 271 81% 56%;
+    --chart-5: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 222 28% 7%;
+    --foreground: 215 18% 88%;
+    --card: 222 26% 10%;
+    --card-foreground: 215 18% 88%;
+    --popover: 222 26% 10%;
+    --popover-foreground: 215 18% 88%;
+    --primary: 213 60% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 24% 14%;
+    --secondary-foreground: 215 18% 88%;
+    --muted: 222 24% 13%;
+    --muted-foreground: 215 10% 56%;
+    --accent: 222 24% 13%;
+    --accent-foreground: 215 18% 88%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 82% 50%;
+    --warning-foreground: 0 0% 10%;
+    --border: 222 24% 18%;
+    --input: 222 24% 18%;
+    --ring: 213 60% 56%;
+    --sidebar-background: 222 30% 6%;
+    --sidebar-foreground: 215 16% 75%;
+    --sidebar-primary: 213 60% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 26% 11%;
+    --sidebar-accent-foreground: 215 16% 75%;
+    --sidebar-border: 222 26% 13%;
+    --sidebar-ring: 213 60% 56%;
   }
 }
 
-
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
@@ -77,108 +105,84 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', system-ui, sans-serif;
     font-weight: 600;
+    letter-spacing: -0.025em;
   }
   code, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
   }
 }
 
 /* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 3px;
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.5);
-}
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.4); }
 
-/* Table striped rows */
-.table-striped tbody tr:nth-child(even) {
-  background-color: hsl(var(--muted) / 0.3);
-}
-.table-striped tbody tr:hover {
-  background-color: hsl(var(--primary) / 0.08);
-}
+/* Table */
+.table-striped tbody tr:nth-child(even) { background-color: hsl(var(--muted) / 0.3); }
+.table-striped tbody tr:hover { background-color: hsl(var(--primary) / 0.05); }
 
-/* Glow effects for KPI cards */
-.kpi-glow {
-  box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.15);
-}
-
-/* Data grid */
-.data-grid {
-  display: grid;
-  gap: 1rem;
-}
-
-/* Metric highlight */
+/* KPI number formatting */
 .metric-value {
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  font-feature-settings: "tnum";
 }
 
-/* Mobile: hide non-essential table columns */
-@media (max-width: 639px) {
-  .hide-mobile { display: none !important; }
-}
-
-/* Touch-friendly tap targets */
-@media (pointer: coarse) {
-  .touch-target { min-height: 44px; }
-}
-
-/* Glass morphism card */
-.glass-card {
-  background: hsl(0 0% 100% / 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid hsl(var(--border));
-  box-shadow: 0 4px 20px -2px hsl(0 0% 0% / 0.05);
-}
-
-/* ===== PWA / Mobile Optimizations ===== */
-
-/* Safe area insets for notched devices (iPhone X+) */
+/* Mobile */
+@media (max-width: 639px) { .hide-mobile { display: none !important; } }
+@media (pointer: coarse) { .touch-target { min-height: 44px; } }
 @supports (padding: env(safe-area-inset-top)) {
   .pwa-safe-top { padding-top: env(safe-area-inset-top); }
   .pwa-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
-
-/* Prevent pull-to-refresh interfering with scroll areas */
 @media (max-width: 768px) {
-  main {
-    overscroll-behavior-y: contain;
-  }
+  main { overscroll-behavior-y: contain; }
+  .overflow-x-auto { -webkit-overflow-scrolling: touch; }
 }
-
-/* Mobile filter bar horizontal scroll */
 .mobile-filter-scroll {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.mobile-filter-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-/* Mobile table containers: momentum scrolling */
-@media (max-width: 768px) {
-  .overflow-x-auto {
-    -webkit-overflow-scrolling: touch;
-  }
-}
-
-/* Prevent text selection on interactive elements in mobile */
+.mobile-filter-scroll::-webkit-scrollbar { display: none; }
 @media (pointer: coarse) {
   button, [role="button"], .cursor-pointer {
     -webkit-tap-highlight-color: transparent;
     user-select: none;
   }
 }
+
+/* Card elevation system */
+.card-elevated {
+  box-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+}
+.card-interactive {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.card-interactive:hover {
+  box-shadow: 0 4px 12px 0 hsl(0 0% 0% / 0.12);
+  transform: translateY(-1px);
+}
+
+/* Stat number */
+.stat-number {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.04em;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
+.animate-slide-in { animation: slide-in-left 0.2s ease-out forwards; }

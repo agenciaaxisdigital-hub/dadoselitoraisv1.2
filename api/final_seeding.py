@@ -66,7 +66,7 @@ def main():
             time.sleep(2)
 
         if records:
-            response = supabase.table("conhecimento_ia").upsert(records).execute()
+            response = supabase.table("documentos_ia").upsert(records).execute()
             logger.info(f"Upserted {len(response.data)} records to Supabase.")
 
     except Exception as e:

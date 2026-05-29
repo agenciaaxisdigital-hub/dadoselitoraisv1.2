@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+// TODO: migrar para useMvEscolas() de '@/hooks/mv/useMvEscolas' (Supabase mv_escolas)
+// Atenção: EscolaItem do novo hook usa `total_eleitores` em vez de `eleitores` — revisar usos locais
 import { useEscolas } from '@/hooks/useEscolas';
 import { useFilterStore } from '@/stores/filterStore';
 import { Input } from '@/components/ui/input';
@@ -354,7 +356,6 @@ function Detalhe({ escola }: { escola: EscolaCard }) {
                       <TableHead className="text-[10px]">Gênero</TableHead>
                       <TableHead className="text-[10px]">Faixa Etária</TableHead>
                       <TableHead className="text-[10px]">Instrução</TableHead>
-                      <TableHead className="text-[10px]">Cor/Raça</TableHead>
                       <TableHead className="text-[10px]">Voluntário</TableHead>
                       <TableHead className="text-[10px]">Compareceu</TableHead>
                       <TableHead className="text-[10px] text-right">Qtd</TableHead>
@@ -368,7 +369,6 @@ function Detalhe({ escola }: { escola: EscolaCard }) {
                         <TableCell className="text-xs">{m.genero || '-'}</TableCell>
                         <TableCell className="text-xs">{m.faixa_etaria || '-'}</TableCell>
                         <TableCell className="text-xs max-w-[110px] truncate">{m.grau_instrucao || '-'}</TableCell>
-                        <TableCell className="text-xs">{m.cor_raca || '-'}</TableCell>
                         <TableCell className="text-xs"><SimNao val={m.voluntario} /></TableCell>
                         <TableCell className="text-xs"><SimNao val={m.comparecimento} /></TableCell>
                         <TableCell className="text-xs text-right font-bold">{fmt(m.qt_convocados || 0)}</TableCell>

@@ -1,151 +1,388 @@
+"""
+Chat Service — Groq + Data Injection
+--------------------------------------
+Arquitetura zero-custo para escala:
+
+  1. Cache Redis (hit → <5ms, custo zero)
+  2. Intent Detection Python (regex, custo zero)
+  3. Query Supabase mv_* (dados reais, custo zero)
+  4. Groq API Llama 3 — free tier: 500k tokens/dia
+     → injeta dados como contexto no prompt
+     → responde como assistente eleitoral especialista
+  5. Cache 24h
+
+Groq free tier: llama-3.1-8b-instant, 500k tokens/dia, 30 RPM
+Sem limite de usuários simultâneos para este volume.
+"""
+
 import os
+import re
 import json
 import logging
-from typing import Optional
 import hashlib
+import unicodedata
+from typing import Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-import duckdb
 from supabase import create_client, Client
-import google.generativeai as genai
 from upstash_redis import Redis
+from groq import Groq
 
 logger = logging.getLogger("chat-service")
 
-# --- CONEXÕES ---
-def get_supabase_client() -> Client:
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise ValueError("Supabase (conhecimento_ia) env vars missing")
-    return create_client(url, key)
 
-def get_redis_client() -> Optional[Redis]:
-    url = os.getenv("UPSTASH_REDIS_REST_URL")
-    token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-    if not url or not token:
-        logger.warning("Redis não configurado. Cache será ignorado.")
-        return None
-    return Redis(url=url, token=token)
+# ─────────────────────────────────────────────
+# Modelos
+# ─────────────────────────────────────────────
 
-_db_connection = None
-
-def get_db_connection() -> duckdb.DuckDBPyConnection:
-    global _db_connection
-    if _db_connection is not None:
-        return _db_connection
-    token = os.getenv("MOTHERDUCK_TOKEN")
-    _db_connection = duckdb.connect(f"md:?motherduck_token={token}")
-    return _db_connection
-
-def configure_gemini():
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY missing")
-    genai.configure(api_key=api_key)
+class MensagemHistorico(BaseModel):
+    role: str   # "user" | "assistant"
+    content: str
 
 class ChatRequest(BaseModel):
     pergunta: str
     ano: int = 2024
+    municipio: Optional[str] = None
+    historico: list[MensagemHistorico] = []
 
 class ChatResponse(BaseModel):
     resposta: str
     sql_gerado: Optional[str] = None
     cache: bool = False
+    intent: Optional[str] = None
 
-def gerar_hash(pergunta: str, ano: int) -> str:
-    s = f"{pergunta.strip().lower()}|{ano}"
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+# ─────────────────────────────────────────────
+# Conexões (lazy singletons)
+# ─────────────────────────────────────────────
+
+_supabase: Optional[Client] = None
+_redis: Optional[Redis] = None
+_groq: Optional[Groq] = None
+
+def _get_supabase() -> Client:
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_KEY"],
+        )
+    return _supabase
+
+def _get_redis() -> Optional[Redis]:
+    global _redis
+    if _redis is None:
+        url   = os.getenv("UPSTASH_REDIS_REST_URL")
+        token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+        if url and token:
+            _redis = Redis(url=url, token=token)
+    return _redis
+
+def _get_groq() -> Groq:
+    global _groq
+    if _groq is None:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY não configurado. Obtenha gratuitamente em https://console.groq.com")
+        _groq = Groq(api_key=api_key)
+    return _groq
+
+
+# ─────────────────────────────────────────────
+# Cache Redis
+# ─────────────────────────────────────────────
+
+_TTL = 86400  # 24h
+
+def _cache_key(pergunta: str, ano: int, municipio: str) -> str:
+    raw = f"{pergunta.strip().lower()}|{ano}|{municipio.lower()}"
+    return f"chat3:{hashlib.sha256(raw.encode()).hexdigest()[:24]}"
+
+def _cache_get(key: str) -> Optional[str]:
+    redis = _get_redis()
+    if not redis:
+        return None
+    try:
+        return redis.get(key)
+    except Exception:
+        return None
+
+def _cache_set(key: str, value: str) -> None:
+    redis = _get_redis()
+    if not redis:
+        return
+    try:
+        redis.set(key, value, ex=_TTL)
+    except Exception as e:
+        logger.warning("Redis set error: %s", e)
+
+
+# ─────────────────────────────────────────────
+# Intent Detection — identifica quais dados buscar
+# ─────────────────────────────────────────────
+
+_INTENTS = [
+    ("RANKING",       r"mais votado|ranking|votos|venceu|eleito|candidato|partido|cargo|prefeito|vereador|primeiro|segundo|placar|ganhou"),
+    ("FINANCIAMENTO", r"gast|arrecad|receita|doaç|doaçã|patrimônio|patrimoni|dinheiro|financi|rico|custo por voto|quanto recebeu|quanto gastou"),
+    ("ELEITORADO",    r"eleitor|perfil|gênero|genero|faixa etária|faixa etaria|escolaridade|estado civil|quantos eleitores|mulheres|homens|jovens|idosos"),
+    ("ESCOLAS",       r"escola|local de votação|local de votacao|seção|secao|onde votar|urna|colégio"),
+    ("ZONAS",         r"zona|comparecimento|abstenção|abstencao|taxa de comparecimento|turno|votaram|não votaram"),
+    ("SUPLENTES",     r"suplente|assumiu|vagas|vice|segundo colocado|não eleito"),
+]
+
+def _detect_intents(pergunta: str) -> list[str]:
+    """Retorna lista de intents (pode ter mais de um)."""
+    p = _normalize(pergunta)
+    found = [intent for intent, pattern in _INTENTS if re.search(pattern, p)]
+    return found or ["GERAL"]
+
+def _normalize(text: str) -> str:
+    """Remove acentos e converte para minúsculas — para busca tolerante a digitação."""
+    return unicodedata.normalize("NFD", text.lower()).encode("ascii", "ignore").decode()
+
+
+# ─────────────────────────────────────────────
+# Busca de dados Supabase mv_* por intent
+# ─────────────────────────────────────────────
+
+def _municipio_filter(municipio: str) -> str:
+    """Retorna o nome do município sem acentos, em UPPER — para busca tolerante.
+    Ex: 'APARECIDA DE GOIÂNIA' → 'APARECIDA DE GOIANIA'
+    Ex: 'GOIÂNIA' → 'GOIANIA'"""
+    nfkd = unicodedata.normalize("NFD", municipio.upper())
+    return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+
+
+def _accent_wildcard(text: str) -> str:
+    """Troca vogais que podem ter acento por _ (wildcard do PostgreSQL ilike).
+    Ex: GOIANIA → GOI_NI_, APARECIDA → AP_R_CID_
+    Assim 'GOI_NI_' bate com 'GOIÂNIA', 'GOIÃNIA', etc."""
+    # Vogais que comumente têm acento em português
+    _ACCENT_CHARS = set("AEIOUÇ")
+    return "".join("_" if c in _ACCENT_CHARS else c for c in text.upper())
+
+
+def _apply_municipio_filter(query, municipio: str):
+    """Filtro de município tolerante a acentos via wildcard ilike.
+    Remove acentos do input, depois troca vogais por _ para casar com qualquer variante acentuada no banco."""
+    sem_acento = _municipio_filter(municipio.upper().strip())
+    pattern = _accent_wildcard(sem_acento)
+    return query.ilike("municipio_nome", f"%{pattern}%")
+
+
+def _buscar_dados(intents: list[str], ano: int, municipio: str) -> dict[str, list[dict]]:
+    """Busca dados relevantes nas tabelas mv_* do Supabase."""
+    sb = _get_supabase()
+    resultado: dict[str, list[dict]] = {}
+
+    for intent in intents[:2]:  # máximo 2 intents por pergunta
+        try:
+            if intent == "RANKING":
+                q = (
+                    sb.table("mv_candidatos")
+                    .select("nm_urna,sg_partido,ds_cargo,municipio_nome,total_votos,ds_situacao,nr_candidato")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resp = q.order("total_votos", desc=True).limit(15).execute()
+                resultado["candidatos"] = resp.data
+
+            elif intent == "FINANCIAMENTO":
+                q = (
+                    sb.table("mv_candidatos")
+                    .select("sq_candidato,nm_urna,sg_partido,ds_cargo,municipio_nome,total_votos,patrimonio_total")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                cands = q.order("patrimonio_total", desc=True).limit(20).execute().data
+
+                if cands:
+                    sqs = [c["sq_candidato"] for c in cands[:20]]
+                    fin = (
+                        sb.table("mv_financeiro")
+                        .select("sq_candidato,total_receitas,total_despesas")
+                        .eq("ano", ano)
+                        .in_("sq_candidato", sqs)
+                        .execute()
+                    ).data
+                    fin_map = {f["sq_candidato"]: f for f in fin}
+                    for c in cands:
+                        f = fin_map.get(c["sq_candidato"], {})
+                        c["total_receitas"] = f.get("total_receitas", 0)
+                        if c["total_votos"] and c["total_votos"] > 0 and c.get("total_receitas"):
+                            c["custo_por_voto"] = round(float(c["total_receitas"]) / c["total_votos"], 2)
+                resultado["financiamento"] = cands
+
+            elif intent == "ELEITORADO":
+                q = (
+                    sb.table("mv_eleitorado")
+                    .select("tipo,categoria,total")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resultado["eleitorado"] = q.execute().data
+
+            elif intent == "ESCOLAS":
+                q = (
+                    sb.table("mv_escolas")
+                    .select("nm_local,nm_bairro,nr_zona,total_secoes,total_eleitores")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resultado["escolas"] = q.order("total_eleitores", desc=True).limit(20).execute().data
+
+            elif intent == "ZONAS":
+                q = (
+                    sb.table("mv_comparecimento_zona")
+                    .select("nr_zona,qt_apto,qt_compareceu,qt_abstencao,qt_brancos,qt_nulos")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resultado["zonas"] = q.execute().data
+
+            elif intent == "SUPLENTES":
+                q = (
+                    sb.table("mv_candidatos")
+                    .select("nm_urna,sg_partido,ds_cargo,total_votos,ds_situacao,nr_candidato")
+                    .eq("ano", ano)
+                    .ilike("ds_situacao", "%SUPLENTE%")
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resultado["suplentes"] = q.order("total_votos", desc=True).limit(20).execute().data
+
+            elif intent == "GERAL":
+                q = (
+                    sb.table("mv_candidatos")
+                    .select("nm_urna,sg_partido,ds_cargo,total_votos,ds_situacao")
+                    .eq("ano", ano)
+                )
+                q = _apply_municipio_filter(q, municipio)
+                resultado["candidatos"] = q.order("total_votos", desc=True).limit(10).execute().data
+
+        except Exception as e:
+            logger.warning("Erro ao buscar intent %s: %s", intent, e)
+
+    return resultado
+
+
+# ─────────────────────────────────────────────
+# System Prompt (identidade do assistente)
+# ─────────────────────────────────────────────
+
+def _build_system_prompt(municipio: str, ano: int) -> str:
+    return f"""Você é o Assistente Sarelli Inteligência Eleitoral — especialista em dados eleitorais brasileiros.
+
+CONTEXTO ATUAL:
+- Município: {municipio}
+- Eleição: {ano}
+
+REGRAS OBRIGATÓRIAS:
+1. Responda SEMPRE em português brasileiro
+2. Chame "Mesários" de "Lideranças de campo"
+3. Chame "Bairros" de "Setores"
+4. Formate números em padrão BR: 1.234.567 (ponto como milhar)
+5. Formate valores monetários: R$ 1.234,56
+6. Use tabelas markdown para 4+ itens
+7. Seja direto e preciso — estilo B2B premium
+8. Quando tiver dados do banco, use-os como base da resposta
+9. Se os dados não cobrirem a pergunta, diga claramente o que sabe e o que não sabe
+10. NÃO invente dados. Use apenas o que foi fornecido no contexto."""
+
+
+# ─────────────────────────────────────────────
+# Chamada Groq
+# ─────────────────────────────────────────────
+
+_GROQ_MODEL = "llama-3.1-8b-instant"  # gratuito, 500k tokens/dia
+
+def _chamar_groq(
+    system_prompt: str,
+    historico: list[MensagemHistorico],
+    pergunta: str,
+    dados: dict[str, list[dict]],
+) -> str:
+    groq = _get_groq()
+
+    # Monta contexto com dados do banco
+    context_parts = []
+    for chave, registros in dados.items():
+        if registros:
+            context_parts.append(f"[DADOS: {chave.upper()}]\n{json.dumps(registros[:15], ensure_ascii=False, default=str)}")
+
+    context_str = "\n\n".join(context_parts) if context_parts else "[DADOS: sem dados específicos encontrados para esta pergunta]"
+
+    # Monta histórico de conversa (máximo 6 mensagens para economizar tokens)
+    messages = [{"role": "system", "content": system_prompt}]
+
+    for msg in historico[-6:]:
+        messages.append({"role": msg.role, "content": msg.content})
+
+    # Mensagem atual com dados injetados
+    messages.append({
+        "role": "user",
+        "content": f"{context_str}\n\nPergunta: {pergunta}",
+    })
+
+    response = groq.chat.completions.create(
+        model=_GROQ_MODEL,
+        messages=messages,
+        temperature=0.3,    # baixo = mais factual, menos criativo
+        max_tokens=1024,
+        top_p=0.9,
+    )
+
+    return response.choices[0].message.content.strip()
+
+
+# ─────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────
 
 def processar_chat(req: ChatRequest) -> ChatResponse:
-    redis = get_redis_client()
+    municipio = (req.municipio or "APARECIDA DE GOIÂNIA").upper()
+
+    # 1. Cache (só para perguntas sem histórico — perguntas repetidas)
     cache_key = None
-    
-    if redis:
-        cache_key = f"chat_{gerar_hash(req.pergunta, req.ano)}"
-        cached_resp = redis.get(cache_key)
-        if cached_resp:
-            logger.info("Retornando do cache Upstash. Custo Zero.")
-            return ChatResponse(resposta=cached_resp, cache=True)
+    if not req.historico:
+        cache_key = _cache_key(req.pergunta, req.ano, municipio)
+        cached = _cache_get(cache_key)
+        if cached:
+            logger.info("Cache HIT")
+            return ChatResponse(resposta=cached, cache=True)
 
-    configure_gemini()
-    
-    # ETAPA A: Busca Vetorial
+    # 2. Intent detection
+    intents = _detect_intents(req.pergunta)
+    logger.info("Intents: %s | %.60s", intents, req.pergunta)
+
+    # 3. Busca dados Supabase
+    dados = _buscar_dados(intents, req.ano, municipio)
+
+    # 4. Chama Groq com contexto
     try:
-        resultado_embed = genai.embed_content(
-            model="models/gemini-embedding-001",
-            content=req.pergunta,
-            task_type="retrieval_query",
-        )
-        vetor = resultado_embed["embedding"]
-        
-        supabase = get_supabase_client()
-        res_rpc = supabase.rpc("match_conhecimento_ia", {"query_embedding": vetor, "match_count": 3}).execute()
-        
-        contexto_tabelas = ""
-        if res_rpc.data:
-            contexto_tabelas = "\n".join([r.get("conteudo", r.get("esquema", "")) for r in res_rpc.data])
+        system = _build_system_prompt(municipio, req.ano)
+        resposta = _chamar_groq(system, req.historico, req.pergunta, dados)
     except Exception as e:
-        logger.warning(f"Falha na busca vetorial (usando fallback de esquema): {e}")
-        contexto_tabelas = "Considere que existem as tabelas: votacao_secao_{ano}_GO, eleitorado_local_{ano}_GO, mesarios_{ano}_GO e receitas_candidatos_{ano}_GO."
+        logger.error("Groq error: %s", e, exc_info=True)
+        if "GROQ_API_KEY" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail="GROQ_API_KEY não configurada. Adicione no .env ou nas configurações da Vercel: obtenha em https://console.groq.com"
+            )
+        # Se estiver rodando na Vercel (produção), evita expor detalhes internos ao usuário final
+        if os.getenv("VERCEL") or os.getenv("NODE_ENV") == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="Erro no serviço de IA. Por favor, tente novamente em instantes."
+            )
+        raise HTTPException(status_code=503, detail=f"Erro no serviço de IA: {e}")
 
-    # ETAPA B: Prompt Injection (Text-to-SQL)
-    model_sql = genai.GenerativeModel("gemini-1.5-flash")
-    prompt_sql = f"""Você é o Engenheiro de Dados Sarelli Especialista em DuckDB / MotherDuck.
-O usuário perguntou: '{req.pergunta}'
-O ano de contexto da eleição é {req.ano} e as tabelas devem ter este sufixo.
-Com base nos vetores recuperados (esquemas do DB):
-{contexto_tabelas}
+    # 5. Cache (só perguntas sem histórico para evitar cache de contexto errado)
+    if cache_key:
+        _cache_set(cache_key, resposta)
 
-Retorne **EXATAMENTE e SOMENTE** o código SQL (dialecto PostgreSQL adaptado para DuckDB) necessário.
-Não retorne blocos de código com crases (Ex: nunca envie ```sql). Apenas queries de leitura pura (SELECT).
-Se for impossível, retorne a palara `VAZIO`.
-"""
-    resp_sql = model_sql.generate_content(prompt_sql)
-    sql_query = resp_sql.text.strip().replace("```sql", "").replace("```", "").strip()
-
-    if not sql_query or sql_query.upper() == "VAZIO" or not sql_query.upper().startswith("SELECT"):
-        return ChatResponse(resposta="Não foi possível mapear sua pergunta para a basologia eleitoral ou dados são insuficientes.")
-
-    # ETAPA C: Execução Analítica (DuckDB)
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        result = cursor.execute(sql_query).fetchall()
-        col_names = [desc[0] for desc in cursor.description]
-        rows = [dict(zip(col_names, row)) for row in result[:25]] # max 25 rows pro LLM payload limit
-        dados_json = json.dumps(rows, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"Erro MotherDuck ao rodar SQL gerado ({sql_query}): {e}")
-        return ChatResponse(resposta="Falha técnica na consulta analítica. Nossa equipe foi notificada.", sql_gerado=sql_query)
-    finally:
-        cursor.close()
-
-    # ETAPA D: Formatação e Response final
-    model_chat = genai.GenerativeModel("gemini-1.5-flash")
-    prompt_final = f"""Você é o Assistente Estratégico AI da 'Sarelli Inteligência'. (Se comporte de modo premium e firme, estilo ChatGPT B2B).
-Você acabou de consultar o MotherDuck e recebeu o seguinte JSON bruto:
-{dados_json}
-
-Pergunta do Usuário: '{req.pergunta}'
-
-DIRETRIZES DA MARCA:
-1. Sempre chame "Mesários" de "Lideranças de campo" ou "apoio".
-2. Sempre chame "Bairros" de "Setores".
-3. Formate os valores (votos/dinheiro) adequadamente.
-4. Responda DIRETAMENTE a pergunta usando os dados brutos. Organize-os em parágrafos e tabelas markdown limpas (quando houver mais de 3 itens).
-
-Responda:"""
-    
-    resp_final = model_chat.generate_content(prompt_final)
-    resposta_markdown = resp_final.text.strip()
-    
-    if redis:
-        try:
-            # 12 horas cache ttl
-            redis.set(cache_key, resposta_markdown, ex=43200)
-        except Exception as e:
-            logger.warning(f"Failed to cache response in Redis: {e}")
-
-    return ChatResponse(resposta=resposta_markdown, sql_gerado=sql_query, cache=False)
+    return ChatResponse(
+        resposta=resposta,
+        cache=False,
+        intent=",".join(intents),
+    )

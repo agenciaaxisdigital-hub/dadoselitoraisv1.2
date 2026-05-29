@@ -6,10 +6,13 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
 import { AppSidebar } from "@/components/eleicoes/AppSidebar";
 import { GlobalFilters, FilterField } from "@/components/eleicoes/GlobalFilters";
 import { PageLoader } from "@/components/eleicoes/PageLoader";
+import { FetchingBar } from "@/components/eleicoes/FetchingBar";
 import { queryClient, persister } from "@/lib/queryCache";
+import { useFilterStore } from "@/stores/filterStore";
 
 // Lazy-load all page components for faster initial load
 const Ranking = lazy(() => import('./pages/Ranking'));
@@ -20,14 +23,31 @@ const PerfilCandidatos = lazy(() => import('./pages/PerfilCandidatos'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const Ajuda = lazy(() => import('./pages/Ajuda'));
 const RelatorioVotacao = lazy(() => import('./pages/RelatorioVotacao'));
-const ChatEleicoes = lazy(() => import('./pages/ChatEleicoes'));
 const Financiamento = lazy(() => import('./pages/Financiamento'));
 const Eleitorado = lazy(() => import('./pages/Eleitorado'));
 const Pesquisas = lazy(() => import('./pages/Pesquisas'));
 const Suplentes = lazy(() => import('./pages/Suplentes'));
+const ForcaZona = lazy(() => import('./pages/ForcaZona'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-const HIDE_FILTERS = ['/ajuda', '/config', '/candidatos', '/candidato', '/perfil-candidatos', '/chat', '/pesquisas', '/suplentes'];
+const ROUTE_LABELS: Record<string, string> = {
+  '/': 'Ranking & Resultados',
+  '/ranking': 'Ranking & Resultados',
+  '/relatorio': 'Relatório de Votação',
+  '/candidatos': 'Perfil de Candidatos',
+  '/suplentes': 'Suplentes',
+  '/financiamento': 'Financiamento',
+  '/zonas': 'Zonas Eleitorais',
+  '/escolas': 'Locais de Votação',
+  '/mesarios': 'Mesários por Seção',
+  '/forca-zona': 'Força por Zona',
+  '/eleitorado': 'Eleitorado',
+  '/pesquisas': 'Pesquisas',
+  '/config': 'Configurações',
+  '/ajuda': 'Ajuda',
+};
+
+const HIDE_FILTERS = ['/ajuda', '/config', '/candidatos', '/candidato', '/perfil-candidatos', '/pesquisas', '/suplentes'];
 
 const ROUTE_FILTERS: Record<string, FilterField[]> = {
   '/zonas': ['ano', 'municipio', 'cargo', 'turno'],
@@ -46,6 +66,7 @@ function useSplashRemoval() {
 
 function Layout() {
   const location = useLocation();
+  const { municipio, ano } = useFilterStore();
   useSplashRemoval();
 
   const hideFilters = HIDE_FILTERS.some(
@@ -58,14 +79,23 @@ function Layout() {
 
   return (
     <SidebarProvider>
+      <FetchingBar />
       <div className="min-h-screen min-h-[100dvh] flex w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-11 flex items-center border-b border-border/50 bg-card/50 backdrop-blur-sm px-3 sm:px-4 shrink-0 pwa-safe-top">
-            <SidebarTrigger />
-            <div className="ml-3 flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground">EleiçõesGO</span>
-              <span className="text-[10px] text-muted-foreground hidden sm:inline">Inteligência Eleitoral</span>
+          <header className="h-11 flex items-center border-b border-border/50 bg-card/80 backdrop-blur-sm px-3 sm:px-4 shrink-0 pwa-safe-top gap-3">
+            <SidebarTrigger className="h-7 w-7" />
+            <div className="w-px h-4 bg-border/50" />
+            <span className="text-xs font-semibold text-foreground">
+              {ROUTE_LABELS[location.pathname] || 'Dados Eleitorais'}
+            </span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium hidden sm:flex">
+                {municipio}
+              </Badge>
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono">
+                {ano}
+              </Badge>
             </div>
           </header>
           {!hideFilters && <GlobalFilters visibleFilters={visibleFilters} />}
@@ -77,6 +107,7 @@ function Layout() {
                 <Route path="/zonas" element={<ZonasEleitorais />} />
                 <Route path="/escolas" element={<EscolasEleitorais />} />
                 <Route path="/mesarios" element={<Mesarios />} />
+                <Route path="/forca-zona" element={<ForcaZona />} />
                 <Route path="/relatorio" element={<RelatorioVotacao />} />
                 <Route path="/suplentes" element={<Suplentes />} />
                 <Route path="/candidatos" element={<PerfilCandidatos />} />
@@ -84,7 +115,6 @@ function Layout() {
                 <Route path="/candidatos/:id/:ano" element={<PerfilCandidatos />} />
                 <Route path="/config" element={<Configuracoes />} />
                 <Route path="/ajuda" element={<Ajuda />} />
-                <Route path="/chat" element={<ChatEleicoes />} />
                 <Route path="/financiamento" element={<Financiamento />} />
                 <Route path="/eleitorado" element={<Eleitorado />} />
                 <Route path="/pesquisas" element={<Pesquisas />} />
@@ -111,13 +141,24 @@ function Layout() {
   );
 }
 
+function PublicRoutes() {
+  useSplashRemoval();
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="*" element={<Layout />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
 const App = () => (
   <PersistQueryClientProvider client={queryClient} persistOptions={{ persister, maxAge: 24 * 60 * 60 * 1000 }}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Layout />
+        <PublicRoutes />
       </BrowserRouter>
     </TooltipProvider>
   </PersistQueryClientProvider>

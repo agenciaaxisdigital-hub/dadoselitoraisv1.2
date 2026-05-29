@@ -9,11 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Hash, Search, School, X, GitCompareArrows, Plus,
+  Hash, Search, School, X, GitCompareArrows, Plus, Download,
 } from 'lucide-react';
+import { exportToCSV } from '@/lib/export';
 import { cn } from '@/lib/utils';
-import { mdQuery, getTableName, getAnosDisponiveis, sqlComposicaoVotosCandidato, sqlSafe } from '@/lib/motherduck';
+import { mdQuery, sqlComposicaoVotosCandidato, sqlSafe } from '@/lib/motherduck';
 import { useQuery } from '@tanstack/react-query';
+import { useMvBuscarCandidatos, useMvComparativoZona } from '@/hooks/mv/useMvZonas';
+import { SkeletonDrillDown } from '@/components/eleicoes/SkeletonDrillDown';
 
 const fmt = (n: number | string) => Number(n || 0).toLocaleString('pt-BR');
 
@@ -47,86 +50,7 @@ interface CandidatoSelecionado extends ComparativoCandidato {
   partido: string;
 }
 
-/** Hook: search candidates across ALL available years — same logic as Dashboard (LEFT JOIN) */
-function useBuscarCandidatos(municipio: string, search: string) {
-  const anosDisponiveis = getAnosDisponiveis('candidatos');
-  return useQuery({
-    queryKey: ['busca-candidatos-comparativo-multi', municipio, search],
-    queryFn: async () => {
-      if (!search || search.length < 3) return [];
-      const searchUpper = sqlSafe(search.toUpperCase());
-      const munSafe = sqlSafe(municipio);
-
-      const subqueries = anosDisponiveis.map(a => {
-        const cand = getTableName('candidatos', a);
-        const isGeral = [2014, 2018, 2022].includes(a);
-        const munFilterCand = isGeral ? '' : `AND c.NM_UE = '${munSafe}'`;
-        const nameFilter = `(UPPER(c.NM_URNA_CANDIDATO) LIKE '%${searchUpper}%' OR UPPER(c.NM_CANDIDATO) LIKE '%${searchUpper}%')`;
-
-        // Direct candidate search - no JOIN needed (votes fetched only after selection)
-        return `
-          SELECT
-            CAST(c.SQ_CANDIDATO AS VARCHAR) AS sq_candidato,
-            c.NM_URNA_CANDIDATO AS candidato,
-            c.NM_CANDIDATO AS nome_completo,
-            c.SG_PARTIDO AS partido,
-            c.DS_CARGO AS cargo,
-            c.NR_CANDIDATO AS numero,
-            ${a} AS ano,
-            c.NM_UE AS municipio
-          FROM ${cand} c
-          WHERE ${nameFilter} ${munFilterCand}
-        `;
-      });
-
-      const sql = `SELECT DISTINCT * FROM (${subqueries.join('\nUNION ALL\n')}) sub ORDER BY candidato, ano DESC LIMIT 80`;
-      return await mdQuery<CandidatoOption>(sql);
-    },
-    enabled: !!municipio && search.length >= 3,
-    staleTime: 60_000,
-  });
-}
-
-/** Hook: compare votes by zona for selected candidates */
-function useComparativoZona(
-  municipio: string,
-  selecionados: ComparativoCandidato[]
-) {
-  return useQuery({
-    queryKey: ['comparativo-zona', municipio, selecionados.map(s => `${s.sq}_${s.ano}`)],
-    queryFn: async () => {
-      if (selecionados.length === 0) return [];
-      const municipioSafe = sqlSafe(municipio);
-      const subqueries = selecionados.map((s, i) => {
-        const vot = getTableName('votacao', s.ano);
-        const sqSafe = sqlSafe(s.sq);
-        return `
-          SELECT
-            v.NR_ZONA AS zona,
-            SUM(v.QT_VOTOS_NOMINAIS) AS votos,
-            '${sqlSafe(s.label)}' AS candidato_label,
-            ${i} AS idx
-          FROM ${vot} v
-          WHERE CAST(v.SQ_CANDIDATO AS VARCHAR) = '${sqSafe}'
-            AND v.NM_MUNICIPIO = '${municipioSafe}'
-          GROUP BY v.NR_ZONA
-        `;
-      });
-      const sql = subqueries.join('\nUNION ALL\n') + '\nORDER BY zona, idx';
-      const rows = await mdQuery<{ zona: number; votos: number; candidato_label: string; idx: number }>(sql);
-
-      const map = new Map<number, any>();
-      for (const r of rows) {
-        if (!map.has(r.zona)) map.set(r.zona, { zona: r.zona });
-        const entry = map.get(r.zona)!;
-        entry[`votos_${r.idx}`] = Number(r.votos);
-      }
-      return Array.from(map.values()).sort((a, b) => a.zona - b.zona);
-    },
-    enabled: selecionados.length > 0 && !!municipio,
-    staleTime: 5 * 60_000,
-  });
-}
+// useBuscarCandidatos e useComparativoZona migrados para src/hooks/mv/useMvZonas.ts
 
 /** Hook: compare votes by escola for selected candidates */
 function useComparativoEscola(
@@ -186,7 +110,8 @@ export default function ZonasEleitorais() {
   const [searchCandidato, setSearchCandidato] = useState('');
   const [selecionados, setSelecionados] = useState<CandidatoSelecionado[]>([]);
 
-  const { data: resultadosBusca, isLoading: buscando } = useBuscarCandidatos(municipio, searchCandidato);
+  // mv_candidatos: busca filtrada por ano do filterStore
+  const { data: resultadosBusca, isLoading: buscando } = useMvBuscarCandidatos(searchCandidato, ano);
 
   const comparativoItems = useMemo(() =>
     selecionados.map(s => ({
@@ -199,7 +124,14 @@ export default function ZonasEleitorais() {
     [selecionados]
   );
 
-  const { data: dadosZona, isLoading: loadingZona, error: erroZona } = useComparativoZona(municipio, comparativoItems);
+  // mv_votos_zona: comparativo por zona via Supabase
+  const mvComparativoItems = useMemo(() =>
+    selecionados.map(s => ({ sq: s.sq, label: s.label })),
+    [selecionados]
+  );
+  const { data: dadosZona, isLoading: loadingZona, error: erroZona } = useMvComparativoZona(mvComparativoItems, ano, municipio);
+
+  // useComparativoEscola mantido em MotherDuck (usa boletim_urna, não materializado)
   const { data: dadosEscola, isLoading: loadingEscola, error: erroEscola } = useComparativoEscola(municipio, comparativoItems);
 
   const adicionarCandidato = useCallback((c: CandidatoOption) => {
@@ -336,10 +268,24 @@ export default function ZonasEleitorais() {
           {/* --- Tab: Por Zona --- */}
           <TabsContent value="zonas" className="mt-3">
             <Card className="border-border/50 overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-border/30">
+              <div className="px-4 py-2.5 border-b border-border/30 flex items-center justify-between">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Comparativo de votos por Zona Eleitoral — {municipio}
                 </h3>
+                {dadosZona && dadosZona.length > 0 && (
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+                    onClick={() => exportToCSV(
+                      (dadosZona || []).map((row: any) => ({
+                        Zona: row.zona || '',
+                        ...Object.fromEntries(
+                          selecionados.map((s, i) => [s.label + (selecionados.filter(x => x.label === s.label).length > 1 ? ` ${s.ano}` : ''), Number(row[`votos_${i}`] || 0)])
+                        ),
+                      })),
+                      'comparativo-zonas'
+                    )}>
+                    <Download className="w-3 h-3" /> CSV
+                  </Button>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <Table>
@@ -472,13 +418,11 @@ export default function ZonasEleitorais() {
                   </TableHeader>
                   <TableBody>
                     {loadingEscola ? (
-                      Array.from({ length: 8 }).map((_, i) => (
-                        <TableRow key={i}>
-                          {Array.from({ length: selecionados.length + 3 }).map((_, j) => (
-                            <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                          ))}
-                        </TableRow>
-                      ))
+                      <TableRow>
+                        <TableCell colSpan={selecionados.length + 3} className="p-0">
+                          <SkeletonDrillDown />
+                        </TableCell>
+                      </TableRow>
                     ) : erroEscola ? (
                       <TableRow>
                         <TableCell colSpan={selecionados.length + 3} className="text-center text-destructive text-sm py-8">

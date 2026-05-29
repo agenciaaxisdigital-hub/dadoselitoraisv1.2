@@ -127,25 +127,62 @@ CREATE INDEX IF NOT EXISTS idx_mv_escolas_zona
   ON mv_escolas (ano, nr_zona);
 
 -- =====================
+-- mv_eleitorado
+-- =====================
+CREATE TABLE IF NOT EXISTS mv_eleitorado (
+  id           bigserial PRIMARY KEY,
+  ano          smallint  NOT NULL,
+  municipio_nome text    NOT NULL,
+  tipo         text      NOT NULL,
+  categoria    text      NOT NULL,
+  total        integer   DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mv_eleitorado_filtro
+  ON mv_eleitorado (ano, municipio_nome, tipo);
+
+-- =====================
+-- mv_comparecimento_zona
+-- =====================
+CREATE TABLE IF NOT EXISTS mv_comparecimento_zona (
+  id             bigserial PRIMARY KEY,
+  ano            smallint  NOT NULL,
+  municipio_nome text      NOT NULL,
+  nr_zona        smallint  NOT NULL,
+  qt_apto        integer   DEFAULT 0,
+  qt_compareceu  integer   DEFAULT 0,
+  qt_abstencao   integer   DEFAULT 0,
+  qt_brancos     integer   DEFAULT 0,
+  qt_nulos       integer   DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mv_comp_zona_filtro
+  ON mv_comparecimento_zona (ano, municipio_nome);
+
+-- =====================
 -- RLS (DROP + CREATE = idempotente em qualquer versão PostgreSQL)
 -- =====================
-ALTER TABLE mv_candidatos     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mv_candidato_bens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mv_votos_zona     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mv_financeiro     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mv_zonas          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE mv_escolas        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_candidatos          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_candidato_bens      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_votos_zona          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_financeiro          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_zonas               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_escolas             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_eleitorado          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mv_comparecimento_zona ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "mv_candidatos_read"   ON mv_candidatos;
-DROP POLICY IF EXISTS "mv_bens_read"         ON mv_candidato_bens;
-DROP POLICY IF EXISTS "mv_votos_zona_read"   ON mv_votos_zona;
-DROP POLICY IF EXISTS "mv_financeiro_read"   ON mv_financeiro;
-DROP POLICY IF EXISTS "mv_zonas_read"        ON mv_zonas;
-DROP POLICY IF EXISTS "mv_escolas_read"      ON mv_escolas;
+DROP POLICY IF EXISTS "mv_candidatos_read"         ON mv_candidatos;
+DROP POLICY IF EXISTS "mv_bens_read"               ON mv_candidato_bens;
+DROP POLICY IF EXISTS "mv_votos_zona_read"         ON mv_votos_zona;
+DROP POLICY IF EXISTS "mv_financeiro_read"         ON mv_financeiro;
+DROP POLICY IF EXISTS "mv_zonas_read"              ON mv_zonas;
+DROP POLICY IF EXISTS "mv_escolas_read"            ON mv_escolas;
+DROP POLICY IF EXISTS "mv_eleitorado_read"         ON mv_eleitorado;
+DROP POLICY IF EXISTS "mv_comparecimento_zona_read" ON mv_comparecimento_zona;
 
-CREATE POLICY "mv_candidatos_read"   ON mv_candidatos     FOR SELECT USING (true);
-CREATE POLICY "mv_bens_read"         ON mv_candidato_bens FOR SELECT USING (true);
-CREATE POLICY "mv_votos_zona_read"   ON mv_votos_zona     FOR SELECT USING (true);
-CREATE POLICY "mv_financeiro_read"   ON mv_financeiro     FOR SELECT USING (true);
-CREATE POLICY "mv_zonas_read"        ON mv_zonas          FOR SELECT USING (true);
-CREATE POLICY "mv_escolas_read"      ON mv_escolas        FOR SELECT USING (true);
+CREATE POLICY "mv_candidatos_read"         ON mv_candidatos          FOR SELECT USING (true);
+CREATE POLICY "mv_bens_read"               ON mv_candidato_bens      FOR SELECT USING (true);
+CREATE POLICY "mv_votos_zona_read"         ON mv_votos_zona          FOR SELECT USING (true);
+CREATE POLICY "mv_financeiro_read"         ON mv_financeiro          FOR SELECT USING (true);
+CREATE POLICY "mv_zonas_read"              ON mv_zonas               FOR SELECT USING (true);
+CREATE POLICY "mv_escolas_read"            ON mv_escolas             FOR SELECT USING (true);
+CREATE POLICY "mv_eleitorado_read"         ON mv_eleitorado          FOR SELECT USING (true);
+CREATE POLICY "mv_comparecimento_zona_read" ON mv_comparecimento_zona FOR SELECT USING (true);

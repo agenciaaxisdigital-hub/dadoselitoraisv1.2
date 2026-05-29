@@ -7,7 +7,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { X, Filter, Search, MapPin, School, Hash, Check, ChevronsUpDown } from 'lucide-react';
+import { X, Filter, Search, MapPin, School, Hash, Check, ChevronsUpDown, Loader2 } from 'lucide-react';
+import { useIsFetching } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 
 const ANOS = [2024, 2022, 2020, 2018, 2016, 2014];
@@ -30,10 +31,16 @@ export function GlobalFilters({ visibleFilters = ALL_FILTERS }: GlobalFiltersPro
   const { data: escolas } = useEscolas();
   const [openMunicipio, setOpenMunicipio] = useState(false);
   const [localSearch, setLocalSearch] = useState(store.searchText);
+  const [isPending, setIsPending] = useState(false);
+  const isFetching = useIsFetching();
   const activeCount = store.activeFiltersCount();
 
   useEffect(() => {
-    const timer = setTimeout(() => store.setSearchText(localSearch), 400);
+    setIsPending(true);
+    const timer = setTimeout(() => {
+      store.setSearchText(localSearch);
+      setIsPending(false);
+    }, 250);
     return () => clearTimeout(timer);
   }, [localSearch]);
 
@@ -55,7 +62,11 @@ export function GlobalFilters({ visibleFilters = ALL_FILTERS }: GlobalFiltersPro
 
           {show('busca') && (
             <div className="relative flex-1 min-w-[120px] max-w-[180px]">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              {(isPending || isFetching > 0) ? (
+                <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-primary animate-spin" />
+              ) : (
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              )}
               <Input
                 value={localSearch}
                 onChange={e => setLocalSearch(e.target.value)}

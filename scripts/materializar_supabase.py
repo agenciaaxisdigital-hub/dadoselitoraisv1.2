@@ -6,6 +6,7 @@ Rodar: python scripts/materializar_supabase.py --ano 2024 --municipio "APARECIDA
 """
 import os
 import sys
+import math
 import argparse
 import duckdb
 from supabase import create_client, Client
@@ -33,10 +34,25 @@ def get_md() -> duckdb.DuckDBPyConnection:
 def get_sb() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def _cast_int_cols(df, cols: list[str]):
+    for col in cols:
+        if col in df.columns:
+            df[col] = df[col].fillna(0).astype(int)
+    return df
+
+
+def _clean(rows: list[dict]) -> list[dict]:
+    return [
+        {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in row.items()}
+        for row in rows
+    ]
+
+
 def upsert_batch(sb: Client, table: str, rows: list[dict]) -> None:
-    for i in range(0, len(rows), BATCH_SIZE):
-        sb.table(table).upsert(rows[i:i+BATCH_SIZE]).execute()
-        print(f"  {table}: {min(i+BATCH_SIZE, len(rows))}/{len(rows)} linhas")
+    cleaned = _clean(rows)
+    for i in range(0, len(cleaned), BATCH_SIZE):
+        sb.table(table).upsert(cleaned[i:i+BATCH_SIZE]).execute()
+        print(f"  {table}: {min(i+BATCH_SIZE, len(cleaned))}/{len(cleaned)} linhas")
 
 def materializar_candidatos(md, sb, ano: int, uf: str, municipio: str | None) -> None:
     """Popula mv_candidatos a partir das tabelas TSE no MotherDuck."""
@@ -81,7 +97,7 @@ def materializar_candidatos(md, sb, ano: int, uf: str, municipio: str | None) ->
             GROUP BY SQ_CANDIDATO
         ) v2 ON c.SQ_CANDIDATO = v2.SQ_CANDIDATO
         LEFT JOIN (
-            SELECT SQ_CANDIDATO, SUM(VR_BEM_CANDIDATO) AS patrimonio_total
+            SELECT SQ_CANDIDATO, SUM(TRY_CAST(VR_BEM_CANDIDATO AS DOUBLE)) AS patrimonio_total
             FROM my_db.bem_candidato_{ano}_{uf}
             GROUP BY SQ_CANDIDATO
         ) b ON c.SQ_CANDIDATO = b.SQ_CANDIDATO
@@ -101,9 +117,10 @@ def materializar_candidatos(md, sb, ano: int, uf: str, municipio: str | None) ->
         delete_q = delete_q.eq("municipio_nome", municipio)
     delete_q.execute()
 
+    result = _cast_int_cols(result, ["votos_turno1", "votos_turno2", "total_votos", "nr_turno"])
     rows = result.assign(ano=ano, uf=uf).to_dict(orient="records")
     upsert_batch(sb, "mv_candidatos", rows)
-    print(f"mv_candidatos: {len(rows)} linhas materializadas ✓")
+    print(f"mv_candidatos: {len(rows)} linhas materializadas OK")
 
 def materializar_bens(md, sb, ano: int, uf: str, municipio: str | None) -> None:
     params: list = []
@@ -118,7 +135,7 @@ def materializar_bens(md, sb, ano: int, uf: str, municipio: str | None) -> None:
             b.NR_ORDEM_BEM_CANDIDATO    AS nr_ordem,
             b.DS_TIPO_BEM_CANDIDATO     AS ds_tipo_bem,
             b.DS_BEM_CANDIDATO          AS ds_bem,
-            b.VR_BEM_CANDIDATO          AS vr_bem
+            TRY_CAST(b.VR_BEM_CANDIDATO AS DOUBLE) AS vr_bem
         FROM my_db.bem_candidato_{ano}_{uf} b
         {mun_join}
     """
@@ -133,9 +150,10 @@ def materializar_bens(md, sb, ano: int, uf: str, municipio: str | None) -> None:
         pass
     delete_q.execute()
 
+    result = _cast_int_cols(result, ["nr_ordem"])
     rows = result.assign(ano=ano).to_dict(orient="records")
     upsert_batch(sb, "mv_candidato_bens", rows)
-    print(f"mv_candidato_bens: {len(rows)} linhas ✓")
+    print(f"mv_candidato_bens: {len(rows)} linhas OK")
 
 
 def materializar_votos_zona(md, sb, ano: int, uf: str, municipio: str | None) -> None:
@@ -165,9 +183,10 @@ def materializar_votos_zona(md, sb, ano: int, uf: str, municipio: str | None) ->
         delete_q = delete_q.eq("municipio_nome", municipio)
     delete_q.execute()
 
+    result = _cast_int_cols(result, ["total_votos", "nr_zona"])
     rows = result.assign(ano=ano).to_dict(orient="records")
     upsert_batch(sb, "mv_votos_zona", rows)
-    print(f"mv_votos_zona: {len(rows)} linhas ✓")
+    print(f"mv_votos_zona: {len(rows)} linhas OK")
 
 
 def materializar_financeiro(md, sb, ano: int, uf: str, municipio: str | None) -> None:
@@ -184,7 +203,7 @@ def materializar_financeiro(md, sb, ano: int, uf: str, municipio: str | None) ->
     sql = f"""
         SELECT
             r.SQ_CANDIDATO                   AS sq_candidato,
-            COALESCE(SUM(r.VR_RECEITA), 0)   AS total_receitas
+            COALESCE(SUM(TRY_CAST(r.VR_RECEITA AS DOUBLE)), 0) AS total_receitas
         FROM my_db.receitas_candidatos_{ano}_{uf} r
         {mun_join}
         GROUP BY r.SQ_CANDIDATO
@@ -198,7 +217,7 @@ def materializar_financeiro(md, sb, ano: int, uf: str, municipio: str | None) ->
 
     rows = result.assign(ano=ano, total_despesas=0).to_dict(orient="records")
     upsert_batch(sb, "mv_financeiro", rows)
-    print(f"mv_financeiro: {len(rows)} linhas ✓")
+    print(f"mv_financeiro: {len(rows)} linhas OK")
 
 
 def materializar_zonas(md, sb, ano: int, uf: str, municipio: str | None) -> None:
@@ -214,7 +233,7 @@ def materializar_zonas(md, sb, ano: int, uf: str, municipio: str | None) -> None
             NR_ZONA                              AS nr_zona,
             COUNT(DISTINCT NR_LOCAL_VOTACAO)     AS total_locais,
             COUNT(DISTINCT NR_SECAO)             AS total_secoes,
-            SUM(QT_ELEITORES_PERFIL)             AS total_eleitores
+            SUM(QT_ELEITOR_SECAO)                AS total_eleitores
         FROM my_db.eleitorado_local_votacao_{ano}
         WHERE SG_UF = ? {mun_filter}
         GROUP BY NM_MUNICIPIO, NR_ZONA
@@ -231,9 +250,142 @@ def materializar_zonas(md, sb, ano: int, uf: str, municipio: str | None) -> None
         delete_q = delete_q.eq("municipio_nome", municipio)
     delete_q.execute()
 
+    result = _cast_int_cols(result, ["total_eleitores", "total_secoes", "total_locais", "nr_zona"])
     rows = result.assign(ano=ano).to_dict(orient="records")
     upsert_batch(sb, "mv_zonas", rows)
-    print(f"mv_zonas: {len(rows)} linhas ✓")
+    print(f"mv_zonas: {len(rows)} linhas OK")
+
+
+def materializar_escolas(md, sb, ano: int, uf: str, municipio: str | None) -> None:
+    params: list = ['GO']
+    mun_filter = ""
+    if municipio:
+        mun_filter = "AND NM_MUNICIPIO = ?"
+        params.append(municipio)
+
+    sql = f"""
+        SELECT
+            NM_MUNICIPIO                              AS municipio_nome,
+            NR_ZONA                                   AS nr_zona,
+            NM_LOCAL_VOTACAO                          AS nm_local,
+            MAX(DS_ENDERECO)                          AS ds_endereco,
+            MAX(NM_BAIRRO)                            AS nm_bairro,
+            COUNT(DISTINCT NR_SECAO)                  AS total_secoes,
+            SUM(QT_ELEITOR_SECAO)                     AS total_eleitores
+        FROM my_db.eleitorado_local_votacao_{ano}
+        WHERE SG_UF = ?
+          AND NM_LOCAL_VOTACAO IS NOT NULL
+          AND NM_LOCAL_VOTACAO != ''
+          {mun_filter}
+        GROUP BY NM_MUNICIPIO, NR_ZONA, NM_LOCAL_VOTACAO
+    """
+    try:
+        result = md.execute(sql, params).fetchdf()
+    except Exception as e:
+        print(f"[AVISO] eleitorado_local_votacao_{ano} escolas indisponivel: {e}")
+        return
+
+    result = _cast_int_cols(result, ["nr_zona", "total_secoes", "total_eleitores"])
+    delete_q = sb.table("mv_escolas").delete().eq("ano", ano)
+    if municipio:
+        delete_q = delete_q.eq("municipio_nome", municipio)
+    delete_q.execute()
+
+    rows = result.assign(ano=ano).to_dict(orient="records")
+    upsert_batch(sb, "mv_escolas", rows)
+    print(f"mv_escolas: {len(rows)} linhas OK")
+
+
+def materializar_eleitorado(md, sb, ano: int, uf: str, municipio: str | None) -> None:
+    if municipio:
+        p_mun = [municipio]
+        mun_cond = "AND NM_MUNICIPIO = ?"
+    else:
+        p_mun = []
+        mun_cond = ""
+
+    sql = f"""
+        SELECT NM_MUNICIPIO AS municipio_nome, 'genero' AS tipo, DS_GENERO AS categoria,
+               SUM(QT_ELEITORES_PERFIL) AS total
+        FROM my_db.perfil_eleitorado_{ano}
+        WHERE SG_UF = ? AND DS_GENERO IS NOT NULL {mun_cond}
+        GROUP BY NM_MUNICIPIO, DS_GENERO
+
+        UNION ALL
+
+        SELECT NM_MUNICIPIO, 'faixa_etaria', DS_FAIXA_ETARIA, SUM(QT_ELEITORES_PERFIL)
+        FROM my_db.perfil_eleitorado_{ano}
+        WHERE SG_UF = ? AND DS_FAIXA_ETARIA IS NOT NULL {mun_cond}
+        GROUP BY NM_MUNICIPIO, DS_FAIXA_ETARIA
+
+        UNION ALL
+
+        SELECT NM_MUNICIPIO, 'escolaridade', DS_GRAU_ESCOLARIDADE, SUM(QT_ELEITORES_PERFIL)
+        FROM my_db.perfil_eleitorado_{ano}
+        WHERE SG_UF = ? AND DS_GRAU_ESCOLARIDADE IS NOT NULL {mun_cond}
+        GROUP BY NM_MUNICIPIO, DS_GRAU_ESCOLARIDADE
+
+        UNION ALL
+
+        SELECT NM_MUNICIPIO, 'estado_civil', DS_ESTADO_CIVIL, SUM(QT_ELEITORES_PERFIL)
+        FROM my_db.perfil_eleitorado_{ano}
+        WHERE SG_UF = ? AND DS_ESTADO_CIVIL IS NOT NULL {mun_cond}
+        GROUP BY NM_MUNICIPIO, DS_ESTADO_CIVIL
+    """
+    params = ['GO'] + p_mun + ['GO'] + p_mun + ['GO'] + p_mun + ['GO'] + p_mun
+
+    try:
+        result = md.execute(sql, params).fetchdf()
+    except Exception as e:
+        print(f"[AVISO] perfil_eleitorado_{ano} indisponivel: {e}")
+        return
+
+    result = _cast_int_cols(result, ["total"])
+    delete_q = sb.table("mv_eleitorado").delete().eq("ano", ano)
+    if municipio:
+        delete_q = delete_q.eq("municipio_nome", municipio)
+    delete_q.execute()
+
+    rows = result.assign(ano=ano).to_dict(orient="records")
+    upsert_batch(sb, "mv_eleitorado", rows)
+    print(f"mv_eleitorado: {len(rows)} linhas OK")
+
+
+def materializar_comparecimento_zona(md, sb, ano: int, uf: str, municipio: str | None) -> None:
+    params: list = []
+    mun_filter = ""
+    if municipio:
+        mun_filter = "AND NM_MUNICIPIO = ?"
+        params.append(municipio)
+
+    sql = f"""
+        SELECT
+            NM_MUNICIPIO          AS municipio_nome,
+            NR_ZONA               AS nr_zona,
+            SUM(QT_APTOS)         AS qt_apto,
+            SUM(QT_COMPARECIMENTO) AS qt_compareceu,
+            SUM(QT_ABSTENCOES)    AS qt_abstencao,
+            SUM(QT_VOTOS_BRANCOS) AS qt_brancos,
+            SUM(QT_VOTOS_NULOS)   AS qt_nulos
+        FROM my_db.detalhe_votacao_munzona_{ano}_{uf}
+        WHERE NR_TURNO = 1 {mun_filter}
+        GROUP BY NM_MUNICIPIO, NR_ZONA
+    """
+    try:
+        result = md.execute(sql, params).fetchdf()
+    except Exception as e:
+        print(f"[AVISO] detalhe_votacao_munzona_{ano}_{uf} indisponivel: {e}")
+        return
+
+    result = _cast_int_cols(result, ["nr_zona", "qt_apto", "qt_compareceu", "qt_abstencao", "qt_brancos", "qt_nulos"])
+    delete_q = sb.table("mv_comparecimento_zona").delete().eq("ano", ano)
+    if municipio:
+        delete_q = delete_q.eq("municipio_nome", municipio)
+    delete_q.execute()
+
+    rows = result.assign(ano=ano).to_dict(orient="records")
+    upsert_batch(sb, "mv_comparecimento_zona", rows)
+    print(f"mv_comparecimento_zona: {len(rows)} linhas OK")
 
 
 if __name__ == "__main__":
@@ -244,6 +396,8 @@ if __name__ == "__main__":
     parser.add_argument("--uf",        type=str, default="GO")
     parser.add_argument("--municipio", type=str, default=None,
                         help="Filtrar por município (ex: 'APARECIDA DE GOIÂNIA'). Sem filtro = todos.")
+    parser.add_argument("--tables", type=str, default="all",
+                        help="Comma-separated: all,candidatos,bens,votos_zona,financeiro,zonas,escolas,eleitorado,comparecimento_zona")
     args = parser.parse_args()
 
     md = get_md()
@@ -251,10 +405,16 @@ if __name__ == "__main__":
     label = f"ano={args.ano} uf={args.uf} municipio={args.municipio or 'TODOS'}"
     print(f"Iniciando materialização: {label}")
 
-    materializar_candidatos(md, sb, args.ano, args.uf, args.municipio)
-    materializar_bens(md, sb, args.ano, args.uf, args.municipio)
-    materializar_votos_zona(md, sb, args.ano, args.uf, args.municipio)
-    materializar_financeiro(md, sb, args.ano, args.uf, args.municipio)
-    materializar_zonas(md, sb, args.ano, args.uf, args.municipio)
+    tables = [t.strip() for t in args.tables.split(',')] if args.tables != 'all' else ['all']
+    run_all = 'all' in tables
 
-    print(f"\nMaterialização completa ✓  ({label})")
+    if run_all or 'candidatos'          in tables: materializar_candidatos(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'bens'                in tables: materializar_bens(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'votos_zona'          in tables: materializar_votos_zona(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'financeiro'          in tables: materializar_financeiro(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'zonas'               in tables: materializar_zonas(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'escolas'             in tables: materializar_escolas(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'eleitorado'          in tables: materializar_eleitorado(md, sb, args.ano, args.uf, args.municipio)
+    if run_all or 'comparecimento_zona' in tables: materializar_comparecimento_zona(md, sb, args.ano, args.uf, args.municipio)
+
+    print(f"\nMaterialização completa OK  ({label})")
