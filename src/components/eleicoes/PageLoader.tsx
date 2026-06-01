@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Logo } from '@/components/brand/Logo';
 
 const MESSAGES = [
   'Carregando dados eleitorais…',
@@ -17,23 +18,9 @@ export function PageLoader({ label }: { label?: string }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background gap-6">
-      {/* Logo Axis */}
+      {/* Logo SETPOLITIC */}
       <div className="flex flex-col items-center gap-3">
-        <img
-          src="/logo-axis.jpg"
-          alt="Agência Axis"
-          style={{ width: 72, height: 72, objectFit: 'contain' }}
-        />
-        <div className="text-center">
-          <p style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: '1.1rem', letterSpacing: '-0.01em' }}
-            className="text-foreground">
-            AXIS<span className="text-primary">POLITIC</span>
-          </p>
-          <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', marginTop: 2 }}
-            className="text-muted-foreground uppercase">
-            Sistema Eleitoral Goiano
-          </p>
-        </div>
+        <Logo size="lg" variant="light-bg" showTagline={true} />
       </div>
 
       {/* Barra de progresso */}

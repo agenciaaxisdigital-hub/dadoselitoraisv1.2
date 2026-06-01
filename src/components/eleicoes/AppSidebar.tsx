@@ -10,6 +10,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/brand/Logo';
 
 const mainItems = [
   { title: 'Ranking & Resultados', url: '/', icon: Trophy },
@@ -78,34 +79,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="p-3 border-b border-sidebar-border/50">
         <Link to="/" className="flex items-center gap-2.5 px-0.5 overflow-hidden">
-          {/* Container branco para a logo JPG ficar visível na sidebar escura */}
-          <div style={{
-            width: collapsed ? 30 : 34,
-            height: collapsed ? 30 : 34,
-            background: '#fff',
-            borderRadius: 7,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}>
-            <img
-              src="/logo-axis.jpg"
-              alt="Axis"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          </div>
-          {!collapsed && (
-            <div style={{ lineHeight: 1, overflow: 'hidden' }}>
-              <p style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: '0.92rem', letterSpacing: '-0.01em', color: '#fff', whiteSpace: 'nowrap' }}>
-                AXIS<span style={{ color: '#4A9EE8' }}>POLITIC</span>
-              </p>
-              <p style={{ fontSize: '0.55rem', letterSpacing: '0.16em', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', marginTop: 2, whiteSpace: 'nowrap' }}>
-                Sistema Eleitoral
-              </p>
-            </div>
-          )}
+          <Logo size={collapsed ? 'sm' : 'md'} showText={!collapsed} variant="dark-bg" />
         </Link>
       </SidebarHeader>
 

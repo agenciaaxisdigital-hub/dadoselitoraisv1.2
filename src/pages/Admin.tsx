@@ -208,7 +208,7 @@ export default function Admin() {
         </div>
 
         <p className="text-[10px] text-muted-foreground text-right">
-          {filtered.length} usuário{filtered.length !== 1 ? 's' : ''} · AXISPOLITIC Admin
+          {filtered.length} usuário{filtered.length !== 1 ? 's' : ''} · SETPOLITIC Admin
         </p>
       </div>
     </div>

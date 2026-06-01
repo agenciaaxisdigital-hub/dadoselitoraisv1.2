@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
-    <title>AXISPOLITIC — Sistema Eleitoral Goiano</title>
+    <title>SETPOLITIC — Sistema Eleitoral Goiano</title>
     <meta name="description" content="Plataforma de inteligência eleitoral de Goiás — Dados, candidatos, zonas e escolas eleitorais" />
-    <meta name="author" content="AXISPOLITIC" />
-    <meta name="theme-color" content="#1e3a5f" />
+    <meta name="author" content="SETPOLITIC" />
+    <meta name="theme-color" content="#0d2818" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="AXISPOLITIC" />
+    <meta name="apple-mobile-web-app-title" content="SETPOLITIC" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
 
@@ -19,7 +19,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800;900&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800;900&display=swap" /></noscript>
 
-    <meta property="og:title" content="AXISPOLITIC — Sistema Eleitoral Goiano" />
+    <meta property="og:title" content="SETPOLITIC — Sistema Eleitoral Goiano" />
     <meta property="og:description" content="Plataforma de inteligência eleitoral de Goiás" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -41,15 +41,15 @@
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
         font-size: 1.6rem;
         font-weight: 800;
-        color: #1e3a5f;
+        color: #0d2818;
         margin-bottom: 1.5rem;
         letter-spacing: -0.01em;
       }
-      #splash-logo span { color: #2b76c0; }
+      #splash-logo span { color: #2e7d22; }
       .splash-bar {
         width: 200px;
         height: 3px;
-        background: #dde8f5;
+        background: #e2edd5;
         border-radius: 4px;
         overflow: hidden;
         position: relative;
@@ -58,7 +58,7 @@
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(90deg, #1e3a5f, #2b76c0);
+        background: linear-gradient(90deg, #2e7d22, #f5c53a);
         border-radius: 4px;
         animation: splash-progress 1.8s ease-in-out infinite;
         transform-origin: left;
@@ -72,7 +72,7 @@
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 0.6rem;
         font-weight: 600;
-        color: #4a6a8a;
+        color: #3b5a3e;
         letter-spacing: 0.18em;
         text-transform: uppercase;
         margin-top: -1rem;
@@ -81,7 +81,7 @@
       .splash-text {
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 0.75rem;
-        color: #6b8aaa;
+        color: #557758;
         margin-top: 1rem;
       }
     </style>
@@ -89,13 +89,27 @@
 
   <body>
     <div id="splash-screen">
-      <img src="/logo-axis.jpg" alt="Axis" style="width:64px;height:64px;object-fit:contain;margin-bottom:12px;opacity:0.85;" />
-      <div id="splash-logo">AXIS<span>POLITIC</span></div>
+      <!-- SETPOLITIC Pure CSS Premium Icon -->
+      <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #2e7d22, #0d2818); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(46, 125, 34, 0.25); border: 2px solid #f5c53a;">
+        <span style="color: #f5c53a; font-family: 'Montserrat', 'Inter', sans-serif; font-weight: 900; font-size: 1.9rem; line-height: 1; transform: translateY(-1px);">S</span>
+      </div>
+      <div id="splash-logo">SET<span>POLITIC</span></div>
       <div class="splash-subtitle">Sistema Eleitoral Goiano</div>
       <div class="splash-bar"></div>
       <div class="splash-text">Carregando dados eleitorais…</div>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Fallback timeout to guarantee splash screen is removed after maximum 1.5 seconds under all conditions -->
+    <script>
+      setTimeout(function() {
+        var el = document.getElementById('splash-screen');
+        if (el) {
+          el.classList.add('hide');
+          setTimeout(function() { el.remove(); }, 500);
+        }
+      }, 1500);
+    </script>
   </body>
 </html>
