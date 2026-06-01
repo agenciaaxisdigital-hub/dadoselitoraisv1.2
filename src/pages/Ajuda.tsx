@@ -82,11 +82,11 @@ const modulos = [
   },
   {
     icon: Users,
-    title: 'Mesários por Seção',
+    title: 'Lideranças de campo',
     url: '/mesarios',
     color: 'text-sky-500',
     bg: 'bg-sky-500/10',
-    desc: 'Relação de mesários por seção eleitoral. Útil para validar escalas e identificar voluntários recorrentes.',
+    desc: 'Relação de lideranças de campo por seção eleitoral. Útil para validar escalas e identificar voluntários recorrentes.',
   },
   {
     icon: UsersRound,

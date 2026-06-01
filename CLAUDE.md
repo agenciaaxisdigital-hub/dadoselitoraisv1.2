@@ -71,7 +71,7 @@ getTableName('eleitorado_local', 2024)   // → my_db.eleitorado_local_votacao_2
 ### SQL — Zero IA em Produção (Determinístico)
 O motor de consultas usa SQL templates pré-definidos, não LLM gerado em runtime (exceto no módulo Chat). Não misture os padrões.
 
-### Nomenclatura de UI (Branding Sarelli)
+### Nomenclatura de UI (Branding SETPOLITIC)
 - "Mesários" → exibir como **"Lideranças de campo"**
 - "Bairros" → exibir como **"Setores"**
 - Números monetários → formatação BRL premium (sem abreviar em exibição principal)

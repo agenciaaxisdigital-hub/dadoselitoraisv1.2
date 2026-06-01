@@ -24,7 +24,7 @@ const territorialItems = [
   { title: 'Força por Zona', url: '/forca-zona', icon: TrendingUp },
   { title: 'Zonas Eleitorais', url: '/zonas', icon: Hash },
   { title: 'Locais de Votação', url: '/escolas', icon: School },
-  { title: 'Mesários por Seção', url: '/mesarios', icon: Users },
+  { title: 'Lideranças de campo', url: '/mesarios', icon: Users },
   { title: 'Eleitorado', url: '/eleitorado', icon: UsersRound },
 ];
 

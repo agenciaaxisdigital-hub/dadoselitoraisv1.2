@@ -271,7 +271,7 @@ def _buscar_dados(intents: list[str], ano: int, municipio: str) -> dict[str, lis
 # ─────────────────────────────────────────────
 
 def _build_system_prompt(municipio: str, ano: int) -> str:
-    return f"""Você é o Assistente Sarelli Inteligência Eleitoral — especialista em dados eleitorais brasileiros.
+    return f"""Você é o Assistente SETPOLITIC Inteligência Eleitoral — especialista em dados eleitorais brasileiros.
 
 CONTEXTO ATUAL:
 - Município: {municipio}

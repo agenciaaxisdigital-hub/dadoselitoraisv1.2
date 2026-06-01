@@ -39,7 +39,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/financiamento': 'Financiamento',
   '/zonas': 'Zonas Eleitorais',
   '/escolas': 'Locais de Votação',
-  '/mesarios': 'Mesários por Seção',
+  '/mesarios': 'Lideranças de campo',
   '/forca-zona': 'Força por Zona',
   '/eleitorado': 'Eleitorado',
   '/pesquisas': 'Pesquisas',

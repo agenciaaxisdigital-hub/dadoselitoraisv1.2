@@ -173,7 +173,7 @@ export default function Mesarios() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-base sm:text-lg font-bold text-foreground">Mesários por Escola</h1>
+          <h1 className="text-base sm:text-lg font-bold text-foreground">Lideranças de campo por Escola</h1>
           <p className="text-[10px] sm:text-xs text-muted-foreground">
             {municipio}{zonaFiltro ? ` • Zona ${zonaFiltro}` : ''} — {ano} • Fonte: TSE
           </p>
@@ -181,7 +181,7 @@ export default function Mesarios() {
         {escolasReady && mesariosReady && (
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="text-[10px]">{filtered.length} escolas</Badge>
-            <Badge variant="outline" className="text-[10px]">{fmt(totalGeral)} mesários</Badge>
+            <Badge variant="outline" className="text-[10px]">{fmt(totalGeral)} lideranças</Badge>
             <Badge variant="outline" className="text-[10px]">{fmt(totalEleitores)} eleitores</Badge>
           </div>
         )}
@@ -248,7 +248,7 @@ export default function Mesarios() {
                               <div className="flex items-center gap-1.5">
                                 <Users className="w-3.5 h-3.5 text-primary" />
                                 <span className="text-sm font-bold text-primary">{fmt(e.totalMesarios)}</span>
-                                <span className="text-[10px] text-muted-foreground">mesários</span>
+                                <span className="text-[10px] text-muted-foreground">lideranças</span>
                               </div>
                               {e.idadeMedia && (
                                 <div className="text-[10px] text-muted-foreground">
@@ -331,7 +331,7 @@ function Detalhe({ escola }: { escola: EscolaCard }) {
   return (
     <div className="bg-muted/10 border-t border-border/30 p-4 space-y-4 animate-fade-in">
       {mesarios.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Sem dados de mesários para esta zona.</p>
+        <p className="text-xs text-muted-foreground">Sem dados de lideranças de campo para esta zona.</p>
       ) : (
         turnos.map(([turno, rows]) => {
           const r = resumoTurno(rows);

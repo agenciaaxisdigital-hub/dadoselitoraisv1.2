@@ -564,7 +564,7 @@ def mapa_votos(
 @app.post("/api/chat", response_model=ChatResponse, tags=["AI", "Chat"])
 def chat_eleicoes(req: ChatRequest):
     """
-    Super-rota Sarelli: 
+    Super-rota SETPOLITIC: 
     1. Vector Search para contexto
     2. Prompt Injection (Text-to-SQL)
     3. Execução Zero-IA SQL via MotherDuck

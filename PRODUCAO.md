@@ -1,6 +1,6 @@
-# Vercel Deployment & Configuração Sarelli v1.0
+# Vercel Deployment & Configuração SETPOLITIC v1.0
 
-A arquitetura do MVP da Sarelli Inteligência usa um híbrido entre **Static Frontend (React/Vite)** e **Serverless Python (FastAPI/Mangum)** servido através do Vercel. Abaixo está a relação da Infraestrutura Externa e das Variáveis de Ambiente requeridas para deploy.
+A arquitetura do MVP da SETPOLITIC usa um híbrido entre **Static Frontend (React/Vite)** e **Serverless Python (FastAPI/Mangum)** servido através do Vercel. Abaixo está a relação da Infraestrutura Externa e das Variáveis de Ambiente requeridas para deploy.
 
 ## ✨ Serviços Utilizados
 - **MotherDuck (DuckDB):** Para consultas analíticas de ultra-performance (Zero-IA SQL).
@@ -35,4 +35,4 @@ Para iniciar a inteligência de busca rápida do Chat, garantindo o reconhecimen
 3. Rode `python final_seeding.py`. Ele irá iterar sobre as abas do MotherDuck, gerar os embeddings visando similaridade de campos e aplicar `UPSERT` sobre a tabela `conhecimento_ia` no Supabase.
 
 ---
-_Sarelli Inteligência Eleitoral - Confidencial 2026_
+_SETPOLITIC - Confidencial 2026_
