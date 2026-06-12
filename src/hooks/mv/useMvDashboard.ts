@@ -69,7 +69,17 @@ export function useMvPainelGeral(limite = 200) {
         .limit(limite);
 
       if (error) throw new Error(error.message);
-      return (data ?? []).map((r: any): PainelRow => ({
+
+      const uniqueData: any[] = []
+      const seen = new Set<string>()
+      for (const item of (data ?? [])) {
+        if (!seen.has(item.sq_candidato)) {
+          seen.add(item.sq_candidato)
+          uniqueData.push(item)
+        }
+      }
+
+      return uniqueData.map((r: any): PainelRow => ({
         sq_candidato:     String(r.sq_candidato),
         candidato:        r.nm_urna ?? '',
         nome_completo:    r.nm_candidato ?? '',

@@ -374,7 +374,7 @@ function HistoricoEleitoral({ historico, currentAno }: { historico: AnyRow[]; cu
                               <TableHead className="text-[10px] text-slate-500">Município</TableHead>
                               <TableHead className="text-[10px] text-slate-500 text-right">Votos</TableHead>
                               <TableHead className="text-[10px] text-slate-500 text-right">%</TableHead>
-                              <TableHead className="text-[10px] text-slate-500 w-[80px]"></TableHead>
+                              <TableHead className="text-[10px] text-slate-500 w-[80px] hide-mobile"></TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -397,7 +397,7 @@ function HistoricoEleitoral({ historico, currentAno }: { historico: AnyRow[]; cu
                                     <TableCell className="text-xs text-slate-600">{z.municipio}</TableCell>
                                     <TableCell className="text-xs font-mono font-bold text-slate-900 text-right">{zv.toLocaleString('pt-BR')}</TableCell>
                                     <TableCell className="text-xs font-mono text-slate-500 text-right">{pct.toFixed(1)}%</TableCell>
-                                    <TableCell>
+                                    <TableCell className="hide-mobile">
                                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(pct * 2, 100)}%` }} />
                                       </div>
@@ -425,11 +425,16 @@ function HistoricoEleitoral({ historico, currentAno }: { historico: AnyRow[]; cu
                                                 return (
                                                   <div key={li} className="flex items-center gap-2 text-[11px] py-0.5">
                                                     <span className="text-slate-400 font-mono w-5 text-right shrink-0">{li + 1}</span>
-                                                    <span className="text-slate-500 w-24 shrink-0 truncate" title={String(l.bairro || '')}>{String(l.bairro || 'N/I')}</span>
-                                                    <span className="text-slate-900 flex-1 truncate" title={String(l.local_votacao || '')}>{String(l.local_votacao || 'N/I')}</span>
+                                                    <span className="text-slate-500 w-24 shrink-0 truncate hide-mobile" title={String(l.bairro || '')}>{String(l.bairro || 'N/I')}</span>
+                                                    <span className="text-slate-900 flex-1 truncate" title={String(l.local_votacao || '')}>
+                                                      {String(l.local_votacao || 'N/I')}
+                                                      {l.bairro && l.bairro !== 'NÃO INFORMADO' && (
+                                                        <span className="sm:hidden text-[10px] text-slate-500 font-normal ml-1">({l.bairro})</span>
+                                                      )}
+                                                    </span>
                                                     <span className="font-mono font-bold text-slate-900 shrink-0">{lv.toLocaleString('pt-BR')}</span>
                                                     <span className="font-mono text-slate-400 shrink-0 w-12 text-right">{lpct.toFixed(1)}%</span>
-                                                    <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                                                    <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden shrink-0 hide-mobile">
                                                       <div className="h-full rounded-full bg-primary/60" style={{ width: `${Math.min(lpct * 2, 100)}%` }} />
                                                     </div>
                                                   </div>
@@ -505,7 +510,7 @@ function PatrimonioSection({ bens, patrimonioTotal }: { bens: AnyRow[]; patrimon
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-[10px] text-slate-500">#</TableHead>
-                      <TableHead className="text-[10px] text-slate-500">Tipo</TableHead>
+                      <TableHead className="text-[10px] text-slate-500 hide-mobile">Tipo</TableHead>
                       <TableHead className="text-[10px] text-slate-500">Descrição</TableHead>
                       <TableHead className="text-[10px] text-slate-500 text-right">Valor</TableHead>
                     </TableRow>
@@ -514,8 +519,13 @@ function PatrimonioSection({ bens, patrimonioTotal }: { bens: AnyRow[]; patrimon
                     {paged.map((r, i) => (
                       <TableRow key={page * PAGE_SIZE + i} className="border-border/30">
                         <TableCell className="text-xs text-slate-400 font-mono">{page * PAGE_SIZE + i + 1}</TableCell>
-                        <TableCell className="text-xs text-slate-600">{r.tipo || '—'}</TableCell>
-                        <TableCell className="text-sm text-slate-900 max-w-[300px] truncate" title={r.descricao}>{r.descricao || '—'}</TableCell>
+                        <TableCell className="text-xs text-slate-600 hide-mobile">{r.tipo || '—'}</TableCell>
+                        <TableCell className="text-sm text-slate-900 max-w-[150px] sm:max-w-[300px] truncate" title={r.descricao}>
+                          {r.descricao || '—'}
+                          {r.tipo && (
+                            <span className="sm:hidden block text-[10px] text-slate-500 font-normal mt-0.5">{r.tipo}</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-slate-900 text-right font-mono font-semibold">
                           {r.valor ? formatBRL(Number(r.valor)) : '—'}
                         </TableCell>
@@ -714,7 +724,7 @@ function ComposicaoVotos({ dados, ano }: { dados: AnyRow[]; ano: number }) {
                 </span>
 
                 {/* barra */}
-                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0 hide-mobile">
                   <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(pct * 2, 100)}%` }} />
                 </div>
               </button>
@@ -723,14 +733,14 @@ function ComposicaoVotos({ dados, ano }: { dados: AnyRow[]; ano: number }) {
               {expanded && temDetail && (
                 <div className="border-t border-border/40">
                   {/* cabeçalho interno */}
-                  <div className="grid grid-cols-[2rem_1fr_1.6fr_4.5rem_3.5rem_3.5rem_4.5rem] gap-x-2 px-4 py-1.5 bg-muted/30 border-b border-border/30">
+                  <div className="grid grid-cols-[1.5rem_1fr_4rem_4rem] sm:grid-cols-[2rem_1fr_1.6fr_4.5rem_3.5rem_3.5rem_4.5rem] gap-x-2 px-4 py-1.5 bg-muted/30 border-b border-border/30">
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">#</span>
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Bairro</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground hide-mobile">Bairro</span>
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Escola</span>
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Seções</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right hide-mobile">Seções</span>
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Votos</span>
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">% zona</span>
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right">% total</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground text-right hide-mobile">% total</span>
                   </div>
 
                   {z.escolas.map((e, ei) => {
@@ -739,19 +749,22 @@ function ComposicaoVotos({ dados, ano }: { dados: AnyRow[]; ano: number }) {
                     return (
                       <div
                         key={ei}
-                        className="grid grid-cols-[2rem_1fr_1.6fr_4.5rem_4.5rem_3.5rem_3.5rem] gap-x-2 items-center px-4 py-1.5 border-b border-border/15 last:border-0 hover:bg-muted/20 transition-colors"
+                        className="grid grid-cols-[1.5rem_1fr_4rem_4rem] sm:grid-cols-[2rem_1fr_1.6fr_4.5rem_3.5rem_3.5rem_4.5rem] gap-x-2 items-center px-4 py-1.5 border-b border-border/15 last:border-0 hover:bg-muted/20 transition-colors"
                       >
                         <span className="text-[10px] text-muted-foreground font-mono text-right">{ei + 1}</span>
 
-                        <span className="text-[11px] text-slate-500 truncate" title={e.bairro}>
+                        <span className="text-[11px] text-slate-500 truncate hide-mobile" title={e.bairro}>
                           <NI v={e.bairro} />
                         </span>
 
-                        <span className="text-[11px] text-slate-900 font-medium truncate" title={e.escola}>
+                        <span className="text-[11px] text-slate-900 font-medium truncate flex flex-col" title={e.escola}>
                           <NI v={e.escola} />
+                          {e.bairro && e.bairro !== 'NÃO INFORMADO' && (
+                            <span className="sm:hidden text-[9px] text-muted-foreground font-normal mt-0.5">{e.bairro}</span>
+                          )}
                         </span>
 
-                        <span className="text-[11px] font-mono text-muted-foreground text-right">
+                        <span className="text-[11px] font-mono text-muted-foreground text-right hide-mobile">
                           {e.secoes > 0 ? e.secoes : '—'}
                         </span>
 
@@ -763,7 +776,7 @@ function ComposicaoVotos({ dados, ano }: { dados: AnyRow[]; ano: number }) {
                           {pctZona.toFixed(1)}%
                         </span>
 
-                        <div className="flex items-center gap-1 justify-end">
+                        <div className="flex items-center gap-1 justify-end hide-mobile">
                           <span className="text-[11px] font-mono text-muted-foreground/70">
                             {pctTotal.toFixed(1)}%
                           </span>
@@ -848,7 +861,7 @@ function FinancesSection({ receitas }: { receitas: AnyRow[] }) {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[10px] text-slate-500">Doador</TableHead>
-              <TableHead className="text-[10px] text-slate-500">Origem</TableHead>
+              <TableHead className="text-[10px] text-slate-500 hide-mobile">Origem</TableHead>
               <TableHead className="text-[10px] text-slate-500 text-right">Valor</TableHead>
             </TableRow>
           </TableHeader>
@@ -860,8 +873,13 @@ function FinancesSection({ receitas }: { receitas: AnyRow[] }) {
               const val = vk ? Number(String(r[vk]).replace(',', '.')) : 0;
               return (
                 <TableRow key={page * PAGE_SIZE + i} className="border-border/30">
-                  <TableCell className="text-sm text-slate-900">{dk ? r[dk] : '—'}</TableCell>
-                  <TableCell className="text-xs text-slate-500">{ok ? r[ok] : '—'}</TableCell>
+                  <TableCell className="text-sm text-slate-900">
+                    {dk ? r[dk] : '—'}
+                    {ok && r[ok] && (
+                      <span className="sm:hidden block text-[10px] text-slate-500 font-normal mt-0.5">{r[ok]}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-500 hide-mobile">{ok ? r[ok] : '—'}</TableCell>
                   <TableCell className="text-sm text-slate-900 text-right font-mono font-semibold">
                     {Number.isFinite(val) && val > 0 ? formatBRL(val) : '—'}
                   </TableCell>

@@ -31,7 +31,16 @@ export function useMvRankingFinanciamento(limite = 100) {
       if (e1) throw new Error(e1.message)
       if (!cands?.length) return []
 
-      const sqs = cands.map(c => c.sq_candidato)
+      const uniqueCands: any[] = []
+      const seen = new Set<string>()
+      for (const item of cands) {
+        if (!seen.has(item.sq_candidato)) {
+          seen.add(item.sq_candidato)
+          uniqueCands.push(item)
+        }
+      }
+
+      const sqs = uniqueCands.map(c => c.sq_candidato)
       const batches: string[][] = []
       for (let i = 0; i < sqs.length; i += 500) batches.push(sqs.slice(i, i + 500))
 
@@ -50,7 +59,7 @@ export function useMvRankingFinanciamento(limite = 100) {
         for (const f of data ?? []) finMap.set(f.sq_candidato, Number(f.total_receitas) || 0)
       }
 
-      return cands
+      return uniqueCands
         .map(c => ({
           sq_candidato: c.sq_candidato,
           candidato: c.nm_urna,

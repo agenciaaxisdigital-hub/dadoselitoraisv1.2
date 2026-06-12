@@ -32,7 +32,7 @@ const territorialItems = [
 export function AppSidebar() {
   const location = useLocation();
   const { state, isMobile, setOpenMobile } = useSidebar();
-  const collapsed = state === 'collapsed';
+  const collapsed = state === 'collapsed' && !isMobile;
 
   function isActive(url: string) {
     if (url === '/') return location.pathname === '/' || location.pathname === '/ranking';

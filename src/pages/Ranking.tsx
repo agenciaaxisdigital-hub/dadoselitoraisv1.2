@@ -14,6 +14,7 @@ import { LoadingKPIs, LoadingTable } from '@/components/eleicoes/LoadingSection'
 import { useSuplentesStore } from '@/stores/suplentesStore';
 import { cn } from '@/lib/utils';
 import { mdQuery, getTableName } from '@/lib/motherduck';
+import { usePartidos } from '@/hooks/useEleicoes';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -44,6 +45,8 @@ export default function Ranking() {
   const [suplCidade, setSuplCidade] = useState('');
   const [suplCidadeDb, setSuplCidadeDb] = useState('');
   const [suplAno, setSuplAno] = useState<number>(ano || 2024);
+  const [suplPartido, setSuplPartido] = useState<string | null>(null);
+  const { data: partidos = [] } = usePartidos();
 
   useEffect(() => {
     const t = setTimeout(() => setSuplCidadeDb(suplCidade.trim()), 350);
@@ -53,21 +56,24 @@ export default function Ranking() {
   const safe = (s: string) => s.replace(/'/g, "''");
 
   const suplQ = useQuery({
-    queryKey: ['supls-cidade', suplAno, suplCidadeDb],
+    queryKey: ['supls-cidade', suplAno, suplCidadeDb, suplPartido],
     enabled: apenasSupl && suplCidadeDb.length >= 2,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       let t: string;
       try { t = getTableName('candidatos', suplAno); } catch { return []; }
-      return mdQuery(`
+      let queryText = `
         SELECT SQ_CANDIDATO AS sq, NM_URNA_CANDIDATO AS nome, NM_CANDIDATO AS nome_completo,
                SG_PARTIDO AS partido, DS_CARGO AS cargo, NM_UE AS municipio, NR_CANDIDATO AS numero
         FROM ${t}
         WHERE NM_UE ILIKE '%${safe(suplCidadeDb)}%'
           AND upper(DS_SIT_TOT_TURNO) = 'SUPLENTE'
-        ORDER BY DS_CARGO, NM_URNA_CANDIDATO
-        LIMIT 300
-      `);
+      `;
+      if (suplPartido) {
+        queryText += ` AND SG_PARTIDO = '${safe(suplPartido)}'`;
+      }
+      queryText += ` ORDER BY DS_CARGO, NM_URNA_CANDIDATO LIMIT 300`;
+      return mdQuery(queryText);
     },
   });
 
@@ -188,6 +194,17 @@ export default function Ranking() {
                 {[2024, 2022, 2020, 2018, 2016, 2014].map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
+            <div className="space-y-1 w-32 shrink-0">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Partido</label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={suplPartido || ''}
+                onChange={e => setSuplPartido(e.target.value || null)}
+              >
+                <option value="">Todos</option>
+                {partidos.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
           </div>
 
           {suplCidadeDb.length < 2 ? (
@@ -217,8 +234,8 @@ export default function Ranking() {
                       <TableHead className="w-7 px-1"></TableHead>
                       <TableHead className="text-[10px] uppercase tracking-wider">Candidato</TableHead>
                       <TableHead className="text-[10px] uppercase tracking-wider">Partido</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">Cargo</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">Cidade</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider hide-mobile">Cargo</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider hide-mobile">Cidade</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -233,28 +250,28 @@ export default function Ranking() {
                         >
                           <TableCell className="px-1 py-2 w-7">
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (marcado) {
-                                  desmarcar(sq);
-                                } else {
-                                  marcar({
-                                    sq,
-                                    nome: String(item.nome_completo || ''),
-                                    nomeUrna: String(item.nome || ''),
-                                    partido: String(item.partido || ''),
-                                    cargo: String(item.cargo || ''),
-                                    municipio: String(item.municipio || ''),
-                                    numero: item.numero ?? '',
-                                    situacao: 'SUPLENTE',
-                                    ano: suplAno,
-                                  });
-                                }
-                              }}
-                              className="p-0.5 rounded hover:bg-amber-100 transition-colors"
-                              title={marcado ? 'Remover' : 'Marcar como suplente'}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 if (marcado) {
+                                   desmarcar(sq);
+                                 } else {
+                                   marcar({
+                                     sq,
+                                     nome: String(item.nome_completo || ''),
+                                     nomeUrna: String(item.nome || ''),
+                                     partido: String(item.partido || ''),
+                                     cargo: String(item.cargo || ''),
+                                     municipio: String(item.municipio || ''),
+                                     numero: item.numero ?? '',
+                                     situacao: 'SUPLENTE',
+                                     ano: suplAno,
+                                   });
+                                 }
+                               }}
+                               className="p-0.5 rounded hover:bg-amber-100 transition-colors"
+                               title={marcado ? 'Remover' : 'Marcar como suplente'}
                             >
-                              <Star className={cn('w-3.5 h-3.5 transition-colors', marcado ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground/25 hover:text-amber-400')} />
+                               <Star className={cn('w-3.5 h-3.5 transition-colors', marcado ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground/25 hover:text-amber-400')} />
                             </button>
                           </TableCell>
                           <TableCell className="px-2 py-2">
@@ -265,6 +282,9 @@ export default function Ranking() {
                             {item.nome_completo && item.nome_completo !== item.nome && (
                               <p className="text-[10px] text-muted-foreground">{item.nome_completo}</p>
                             )}
+                            <div className="sm:hidden text-[9px] text-muted-foreground mt-0.5">
+                              {item.cargo} · {item.municipio}
+                            </div>
                           </TableCell>
                           <TableCell className="px-2 py-2">
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded"
@@ -272,8 +292,8 @@ export default function Ranking() {
                               {item.partido}
                             </span>
                           </TableCell>
-                          <TableCell className="px-2 py-2 text-xs text-muted-foreground">{item.cargo}</TableCell>
-                          <TableCell className="px-2 py-2 text-xs text-muted-foreground">{item.municipio}</TableCell>
+                          <TableCell className="px-2 py-2 text-xs text-muted-foreground hide-mobile">{item.cargo}</TableCell>
+                          <TableCell className="px-2 py-2 text-xs text-muted-foreground hide-mobile">{item.municipio}</TableCell>
                         </TableRow>
                       );
                     })}

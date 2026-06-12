@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, ChevronsUpDown, Download, Search, Star, Trash2, UserCheck } from 'lucide-react';
 import { exportToCSV } from '@/lib/export';
-import { useMunicipios } from '@/hooks/useEleicoes';
+import { useMunicipios, usePartidos } from '@/hooks/useEleicoes';
 import { useMvSuplentes } from '@/hooks/mv/useMvSuplentes';
 import { useSuplentesStore } from '@/stores/suplentesStore';
 import { useFilterStore } from '@/stores/filterStore';
@@ -12,6 +12,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { getPartidoCor } from '@/lib/eleicoes';
 import { cn } from '@/lib/utils';
 
@@ -26,9 +33,11 @@ export default function Suplentes() {
   const [cidade, setCidade] = useState(globalFilters.municipio || '');
   const [openCombo, setOpenCombo] = useState(false);
   const [ano, setAno] = useState(globalFilters.ano || 2024);
+  const [partido, setPartido] = useState<string | null>(null);
   const { data: municipios = [] } = useMunicipios();
+  const { data: partidos = [] } = usePartidos();
 
-  const suplQ = useMvSuplentes(cidade, ano);
+  const suplQ = useMvSuplentes(cidade, ano, partido);
 
   const meusList = useMemo(
     () => Object.values(suplentes).sort((a, b) => a.municipio.localeCompare(b.municipio) || a.cargo.localeCompare(b.cargo)),
@@ -134,6 +143,20 @@ export default function Suplentes() {
                 {ANOS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
+            <div className="space-y-1 w-32 shrink-0">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Partido</label>
+              <Select value={partido || 'todos'} onValueChange={(v) => setPartido(v === 'todos' ? null : v)}>
+                <SelectTrigger className="w-full h-9 text-sm">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[280px]">
+                  <SelectItem value="todos">Todos</SelectItem>
+                  {partidos.map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Resultados */}
@@ -186,9 +209,9 @@ export default function Suplentes() {
                       <TableHead className="w-7 px-1"></TableHead>
                       <TableHead className="text-[10px] uppercase tracking-wider">Candidato</TableHead>
                       <TableHead className="text-[10px] uppercase tracking-wider">Partido</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">Cargo</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider hide-mobile">Cargo</TableHead>
                       <TableHead className="text-[10px] uppercase tracking-wider text-right">Votos</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">Cidade</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider hide-mobile">Cidade</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -236,6 +259,9 @@ export default function Suplentes() {
                             {item.nome_completo && item.nome_completo !== item.nome && (
                               <p className="text-[10px] text-muted-foreground">{item.nome_completo}</p>
                             )}
+                            <div className="sm:hidden text-[9px] text-muted-foreground mt-0.5">
+                              {item.cargo} · {item.municipio}
+                            </div>
                           </TableCell>
                           <TableCell className="px-2 py-2">
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded"
@@ -243,11 +269,11 @@ export default function Suplentes() {
                               {item.partido}
                             </span>
                           </TableCell>
-                          <TableCell className="px-2 py-2 text-xs text-muted-foreground">{item.cargo}</TableCell>
+                          <TableCell className="px-2 py-2 text-xs text-muted-foreground hide-mobile">{item.cargo}</TableCell>
                           <TableCell className="px-2 py-2 text-xs font-mono text-right font-semibold text-foreground">
                             {item.total_votos ? Number(item.total_votos).toLocaleString('pt-BR') : '—'}
                           </TableCell>
-                          <TableCell className="px-2 py-2 text-xs text-muted-foreground">{item.municipio}</TableCell>
+                          <TableCell className="px-2 py-2 text-xs text-muted-foreground hide-mobile">{item.municipio}</TableCell>
                         </TableRow>
                       );
                     })}
@@ -281,9 +307,9 @@ export default function Suplentes() {
                     <TableRow>
                       <TableHead className="text-[10px] text-slate-500">Nome</TableHead>
                       <TableHead className="text-[10px] text-slate-500">Partido</TableHead>
-                      <TableHead className="text-[10px] text-slate-500">Cargo</TableHead>
-                      <TableHead className="text-[10px] text-slate-500">Cidade</TableHead>
-                      <TableHead className="text-[10px] text-slate-500">Ano</TableHead>
+                      <TableHead className="text-[10px] text-slate-500 hide-mobile">Cargo</TableHead>
+                      <TableHead className="text-[10px] text-slate-500 hide-mobile">Cidade</TableHead>
+                      <TableHead className="text-[10px] text-slate-500 hide-mobile">Ano</TableHead>
                       <TableHead className="text-[10px] text-slate-500">Obs.</TableHead>
                       <TableHead className="w-[60px]"></TableHead>
                     </TableRow>
@@ -300,11 +326,14 @@ export default function Suplentes() {
                           {s.nome && s.nomeUrna && s.nome !== s.nomeUrna && (
                             <div className="text-[10px] text-muted-foreground">{s.nome}</div>
                           )}
+                          <div className="sm:hidden text-[9px] text-muted-foreground mt-0.5">
+                            {s.cargo} · {s.municipio} · {s.ano}
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs font-mono">{s.partido}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{s.cargo}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{s.municipio}</TableCell>
-                        <TableCell className="text-xs font-mono">{s.ano}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hide-mobile">{s.cargo}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hide-mobile">{s.municipio}</TableCell>
+                        <TableCell className="text-xs font-mono hide-mobile">{s.ano}</TableCell>
                         <TableCell className="py-1" onClick={e => e.stopPropagation()}>
                           <Input
                             className="h-8 text-xs w-[120px]"

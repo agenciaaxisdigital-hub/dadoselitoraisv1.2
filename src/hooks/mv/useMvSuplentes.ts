@@ -13,26 +13,41 @@ export interface SuplementeItem {
   instagram_url: string | null
 }
 
-export function useMvSuplentes(cidade: string, ano: number) {
+export function useMvSuplentes(cidade: string, ano: number, partido?: string | null) {
   return useQuery<SuplementeItem[]>({
-    queryKey: ['mv_suplentes', ano, cidade],
+    queryKey: ['mv_suplentes', ano, cidade, partido],
     enabled: cidade.length >= 2,
     staleTime: Infinity,
     gcTime: 24 * 60 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('mv_candidatos')
         .select('sq_candidato, nm_urna, nm_candidato, sg_partido, ds_cargo, municipio_nome, nr_candidato, total_votos, ds_situacao')
         .eq('ano', ano)
         .ilike('municipio_nome', cidade)
         .ilike('ds_situacao', '%SUPLENTE%')
+
+      if (partido) {
+        q = q.eq('sg_partido', partido.trim().toUpperCase())
+      }
+
+      const { data, error } = await q
         .order('ds_cargo')
         .order('total_votos', { ascending: false })
         .limit(300)
 
       if (error) throw new Error(error.message)
 
-      return (data || []).map(r => ({
+      const uniqueData: any[] = []
+      const seen = new Set<string>()
+      for (const item of (data ?? [])) {
+        if (!seen.has(item.sq_candidato)) {
+          seen.add(item.sq_candidato)
+          uniqueData.push(item)
+        }
+      }
+
+      return uniqueData.map(r => ({
         sq: r.sq_candidato,
         nome: r.nm_urna,
         nome_completo: r.nm_candidato,
@@ -46,3 +61,4 @@ export function useMvSuplentes(cidade: string, ano: number) {
     },
   })
 }
+

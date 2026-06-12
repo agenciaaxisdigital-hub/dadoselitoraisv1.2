@@ -22,12 +22,22 @@ interface CandBase {
 async function fetchBase(ano: number, municipio: string): Promise<CandBase[]> {
   const { data, error } = await supabase
     .from('mv_candidatos')
-    .select('sg_partido, ds_situacao, ds_genero, total_votos')
+    .select('sq_candidato, sg_partido, ds_situacao, ds_genero, total_votos')
     .eq('ano', ano)
     .eq('municipio_nome', municipio);
 
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r: any) => ({
+
+  const uniqueData: any[] = []
+  const seen = new Set<string>()
+  for (const item of (data ?? [])) {
+    if (!seen.has(item.sq_candidato)) {
+      seen.add(item.sq_candidato)
+      uniqueData.push(item)
+    }
+  }
+
+  return uniqueData.map((r: any) => ({
     sg_partido:  r.sg_partido  ?? 'N/A',
     ds_situacao: r.ds_situacao ?? '',
     ds_genero:   r.ds_genero   ?? '',

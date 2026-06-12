@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { traduzirSituacao } from '@/lib/eleicoes';
+import { usePartidos } from '@/hooks/useEleicoes';
 import CandidatoPerfil from './CandidatoPerfil';
 
 /**
@@ -38,9 +39,9 @@ function useCandidatos(ano: number, municipio: string, cargo: string | null, par
       // Quando há busca textual, expande para Goiás inteiro (ignora filtro de município)
       const ignorarMunicipio = !!b;
 
-      if (!geral && municipio !== '_todos' && !ignorarMunicipio) conds.push(`NM_UE = '${municipio}'`);
-      if (cargo) conds.push(`DS_CARGO = '${cargo}'`);
-      if (partido) conds.push(`SG_PARTIDO = '${partido}'`);
+      if (!geral && municipio !== '_todos' && !ignorarMunicipio) conds.push(`UPPER(NM_UE) = '${municipio.trim().toUpperCase()}'`);
+      if (cargo) conds.push(`UPPER(DS_CARGO) = '${cargo.trim().toUpperCase()}'`);
+      if (partido) conds.push(`UPPER(SG_PARTIDO) = '${partido.trim().toUpperCase()}'`);
 
       if (b) {
         const normalizeSQL = (str: string) => str.replace(/['"]/g, '');
@@ -93,6 +94,8 @@ function PerfilCandidatosList() {
   const [partido, setPartido] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
+
+  const { data: partidos } = usePartidos();
 
   // Debounce manual do campo busca para a query no banco
   useEffect(() => {
@@ -232,6 +235,20 @@ function PerfilCandidatosList() {
               <SelectItem value="todos">Todos</SelectItem>
               {cargosDisponiveis.map(c => (
                 <SelectItem key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1 flex-1">
+          <Label htmlFor="perfil-partido" className="text-xs">Partido</Label>
+          <Select value={partido || 'todos'} onValueChange={(v) => setPartido(v === 'todos' ? null : v)}>
+            <SelectTrigger id="perfil-partido" className="h-9 text-sm">
+              <SelectValue placeholder="Todos" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[280px]">
+              <SelectItem value="todos">Todos</SelectItem>
+              {(partidos || []).map(p => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -441,9 +458,9 @@ function MeusSuplentesTab() {
             <TableRow>
               <TableHead className="text-[10px] text-slate-500">Nome</TableHead>
               <TableHead className="text-[10px] text-slate-500">Partido</TableHead>
-              <TableHead className="text-[10px] text-slate-500">Cargo</TableHead>
-              <TableHead className="text-[10px] text-slate-500">Cidade</TableHead>
-              <TableHead className="text-[10px] text-slate-500">Ano</TableHead>
+              <TableHead className="text-[10px] text-slate-500 hide-mobile">Cargo</TableHead>
+              <TableHead className="text-[10px] text-slate-500 hide-mobile">Cidade</TableHead>
+              <TableHead className="text-[10px] text-slate-500 hide-mobile">Ano</TableHead>
               <TableHead className="text-[10px] text-slate-500">Telefone</TableHead>
               <TableHead className="text-[10px] text-slate-500">Observação</TableHead>
               <TableHead className="text-[10px] text-slate-500 w-[90px]"></TableHead>
@@ -459,11 +476,14 @@ function MeusSuplentesTab() {
                   {s.nome && s.nomeUrna && s.nome !== s.nomeUrna && (
                     <div className="text-[10px] text-muted-foreground">{s.nome}</div>
                   )}
+                  <div className="sm:hidden text-[9px] text-muted-foreground mt-0.5">
+                    {s.cargo} · {s.municipio} · {s.ano}
+                  </div>
                 </TableCell>
                 <TableCell className="text-xs font-mono text-slate-600">{s.partido}</TableCell>
-                <TableCell className="text-xs text-slate-600">{s.cargo}</TableCell>
-                <TableCell className="text-xs text-slate-600">{s.municipio}</TableCell>
-                <TableCell className="text-xs font-mono text-slate-600">{s.ano}</TableCell>
+                <TableCell className="text-xs text-slate-600 hide-mobile">{s.cargo}</TableCell>
+                <TableCell className="text-xs text-slate-600 hide-mobile">{s.municipio}</TableCell>
+                <TableCell className="text-xs font-mono text-slate-600 hide-mobile">{s.ano}</TableCell>
                 <TableCell className="py-1">
                   <div className="flex items-center gap-1">
                     <Input
